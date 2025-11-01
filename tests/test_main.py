@@ -44,14 +44,20 @@ def test_process_entries_dry_run(monkeypatch):
     )
     entries = [
         {
-            "uid": 1,
             "hotkey": "bt1-hk1",
-            "chainId": 31337,
+            "slot_uid": "1",
+            "chain_id": 31337,
             "vault": "0xVault",
-            "owner": "0xOwner",
+            "evm": "0xOwner",
+            "pool_id": "default",
             "snapshotBlock": 100,
         }
     ]
+
+    class SubtensorStub:
+        def get_uid_for_hotkey_on_subnet(self, hotkey_ss58: str, netuid: int) -> int:
+            assert hotkey_ss58 == "bt1-hk1"
+            return 1
 
     result = process_entries(
         entries,
@@ -60,6 +66,7 @@ def test_process_entries_dry_run(monkeypatch):
         dry_run=True,
         replay_fn=_replay_stub,
         publish_fn=publish_stub,
+        subtensor=SubtensorStub(),
     )
 
     assert not publish_calls
@@ -86,14 +93,20 @@ def test_process_entries_publishes(monkeypatch):
     )
     entries = [
         {
-            "uid": 2,
             "hotkey": "bt1-hk2",
-            "chainId": 31337,
+            "slot_uid": "2",
+            "chain_id": 31337,
             "vault": "0xVault",
-            "owner": "0xOwner",
+            "evm": "0xOwner",
+            "pool_id": "default",
             "snapshotBlock": 200,
         }
     ]
+
+    class SubtensorStub:
+        def get_uid_for_hotkey_on_subnet(self, hotkey_ss58: str, netuid: int) -> int:
+            assert hotkey_ss58 == "bt1-hk2"
+            return 2
 
     result = process_entries(
         entries,
@@ -102,6 +115,7 @@ def test_process_entries_publishes(monkeypatch):
         dry_run=False,
         replay_fn=_replay_stub,
         publish_fn=publish_stub,
+        subtensor=SubtensorStub(),
     )
 
     assert published == {2: 0.5}
