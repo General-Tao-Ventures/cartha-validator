@@ -43,6 +43,11 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not publish weights; print the computed vector instead.",
     )
+    parser.add_argument(
+        "--use-verified-amounts",
+        action="store_true",
+        help="Skip on-chain replay and use the verifier's amount field directly (dev/testing only).",
+    )
     return parser.parse_args()
 
 
@@ -95,6 +100,7 @@ def process_entries(
     replay_fn: ReplayFn = replay_owner,
     publish_fn: PublishFn = publish,
     subtensor: Any | None = None,
+    use_verified_amounts: bool = False,
 ) -> Dict[str, Any]:
     """Replay events, score miners, and optionally publish weights."""
     start_time = perf_counter()
@@ -151,6 +157,15 @@ def process_entries(
         miner_failed = False
 
         for entry in miner_entries:
+            if use_verified_amounts:
+                pool_id = entry.get("pool_id") or entry.get("poolId") or "default"
+                amount = int(entry.get("amount", 0))
+                lock_days = settings.max_lock_days
+                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
+                existing["amount"] += amount
+                existing["lockDays"] = max(existing["lockDays"], lock_days)
+                continue
+
             chain_id = entry.get("chainId") or entry.get("chain_id")
             vault = entry.get("vault")
             owner = _resolve_owner(entry)
@@ -277,6 +292,7 @@ def run_epoch(
     dry_run: bool = False,
     replay_fn: ReplayFn = replay_owner,
     publish_fn: PublishFn = publish,
+    use_verified_amounts: bool = False,
 ) -> Dict[str, Any]:
     bt.logging.info("Starting validator run for epoch %s (dry_run=%s)", epoch_version, dry_run)
     with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
@@ -294,6 +310,7 @@ def run_epoch(
         replay_fn=replay_fn,
         publish_fn=publish_fn,
         subtensor=subtensor,
+        use_verified_amounts=use_verified_amounts,
     )
 
     summary = result["summary"]
@@ -346,6 +363,7 @@ def main() -> None:
         settings=settings,
         timeout=args.timeout,
         dry_run=args.dry_run,
+        use_verified_amounts=args.use_verified_amounts,
     )
 
 
