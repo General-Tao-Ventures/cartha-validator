@@ -20,15 +20,11 @@ make test
 
 ## Package Layout
 
+```text
+cartha_validator/   # Validator entrypoint, config, indexer, scoring, weight publisher
+abis/               # Vault ABI definitions used for log decoding
+tests/              # pytest suites for replay helpers
 ```
-packages/
-  validator/   # Event replay + scoring logic + weight publisher
-  subnet/      # Epoch scheduler utilities shared across validator tooling
-  abis/        # Vault ABI definitions used for log decoding
-```
-
-Each package provides its own `pyproject.toml` so it can be packaged independently while sharing this
-workspace.
 
 ## Tooling
 
@@ -37,7 +33,20 @@ workspace.
 - **Type Checking:** `mypy`
 - **Testing:** `pytest`
 
+## Mining SN35 (Cartha) Guidance
+
+Unlike other Bittensor subnets, SN35 miners do **not** run a miner node from this
+repository. Instead, miners register on the subnet and use the CLI to prove their locked USDC to
+the verifier; validators then replay vault events and assign weights on their behalf during each
+epoch. As long as you remain verified, emissions continue without keeping additional software
+online.
+
+- Install and use the CLI by following the instructions in the [`cartha-cli`](../cartha-cli) repo.
+- The CLI walkthrough in that repository covers registration, proving deposits, and day-to-day
+  operations for miners on SN35.
+
+For the validator responsibility side, continue with the modules in this repository.
+
 ## Related Repositories
 
-- [`cartha-verifier`](../cartha-verifier) – private FastAPI service we operate.
 - [`cartha-cli`](../cartha-cli) – Typer CLI for miners.

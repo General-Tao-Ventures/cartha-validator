@@ -5,29 +5,32 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cartha-subnet-validator"
 version = "0.1.0"
-description = "Cartha subnet validator workspace."
+description = "Cartha subnet validator reference implementation."
 requires-python = ">=3.11,<3.12"
 authors = [
-  { name = "Cartha Contributors" }
+  { name = "Cartha Contributors" },
 ]
 readme = "README.md"
-dependencies = []
+dependencies = [
+  "bittensor>=9.12.2",
+  "web3>=6.11,<7",
+  "eth-account>=0.10,<0.11",
+  "httpx>=0.25",
+  "pydantic>=2.6,<3",
+  "apscheduler>=3.10",
+  "tenacity>=8.2",
+  "pytest>=8.2",
+]
 
 [tool.uv]
 dev-dependencies = [
-  "pytest>=8.2",
-  "pytest-asyncio>=0.23",
-  "ruff>=0.4",
-  "mypy>=1.9",
-  "httpx>=0.25",
-]
-
-[tool.uv.workspace]
-members = [
-  "packages/validator",
-  "packages/subnet",
+  "ruff",
+  "mypy",
 ]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
-testpaths = ["packages"]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["cartha_validator"]

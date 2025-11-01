@@ -12,7 +12,7 @@ format:
 	$(UV) run ruff format .
 
 typecheck:
-	$(UV) run mypy --config-file mypy.ini packages
+	$(UV) run mypy --config-file mypy.ini cartha_validator tests
 
 test: lint typecheck
 	$(UV) run pytest

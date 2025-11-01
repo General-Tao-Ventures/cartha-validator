@@ -27,5 +27,3 @@ dist/
 # uv / poetry
 .uv/
 .python-version
-cartha
-subnet
