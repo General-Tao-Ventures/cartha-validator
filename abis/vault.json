@@ -1,4 +1,52 @@
 {
   "contractName": "CarthaVault",
-  "abi": []
+  "abi": [
+    {
+      "name": "LockCreated",
+      "type": "event",
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "bytes32", "name": "lockId", "type": "bytes32"},
+        {"indexed": true, "internalType": "address", "name": "owner", "type": "address"},
+        {"indexed": true, "internalType": "bytes32", "name": "poolId", "type": "bytes32"},
+        {"indexed": false, "internalType": "address", "name": "vault", "type": "address"},
+        {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
+        {"indexed": false, "internalType": "uint64", "name": "start", "type": "uint64"},
+        {"indexed": false, "internalType": "uint64", "name": "lockDays", "type": "uint64"},
+        {"indexed": false, "internalType": "uint64", "name": "maxLockDays", "type": "uint64"}
+      ]
+    },
+    {
+      "name": "LockUpdated",
+      "type": "event",
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "bytes32", "name": "lockId", "type": "bytes32"},
+        {"indexed": false, "internalType": "int256", "name": "deltaAmount", "type": "int256"},
+        {"indexed": false, "internalType": "uint64", "name": "newLockDays", "type": "uint64"}
+      ]
+    },
+    {
+      "name": "LockReleased",
+      "type": "event",
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "bytes32", "name": "lockId", "type": "bytes32"},
+        {"indexed": true, "internalType": "address", "name": "to", "type": "address"},
+        {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"}
+      ]
+    },
+    {
+      "name": "Evicted",
+      "type": "event",
+      "anonymous": false,
+      "inputs": [
+        {"indexed": true, "internalType": "bytes32", "name": "lockId", "type": "bytes32"},
+        {"indexed": true, "internalType": "address", "name": "owner", "type": "address"},
+        {"indexed": true, "internalType": "bytes32", "name": "poolId", "type": "bytes32"},
+        {"indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256"},
+        {"indexed": false, "internalType": "uint64", "name": "epoch", "type": "uint64"}
+      ]
+    }
+  ]
 }
