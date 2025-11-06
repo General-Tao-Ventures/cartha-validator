@@ -7,6 +7,12 @@ from typing import Any, Mapping
 import bittensor as bt
 
 from .config import DEFAULT_SETTINGS, ValidatorSettings
+from .logging import (
+    ANSI_BOLD, ANSI_DIM, ANSI_GREEN, ANSI_YELLOW, ANSI_RED, ANSI_CYAN,
+    ANSI_RESET, ANSI_BRIGHT_GREEN,
+    EMOJI_SUCCESS, EMOJI_ERROR, EMOJI_WARNING, EMOJI_ROCKET, EMOJI_COIN,
+    EMOJI_STOPWATCH
+)
 
 
 def _version_key(epoch_version: str) -> int:
@@ -53,7 +59,10 @@ def publish(
 ) -> dict[int, float]:
     """Normalize scores and publish weights to the subnet."""
     if not scores:
-        bt.logging.warning("No scores to publish; skipping set_weights.")
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No scores to publish;{ANSI_RESET} "
+            f"skipping set_weights."
+        )
         return {}
 
     weights = _normalize(scores)
@@ -61,8 +70,15 @@ def publish(
     values = list(weights.values())
 
     bt.logging.info(
-        f"Publishing {len(uids)} weights for netuid={settings.netuid} epoch={epoch_version}"
+        f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Publishing{ANSI_RESET} "
+        f"{ANSI_BOLD}{len(uids)}{ANSI_RESET} weights "
+        f"for netuid={ANSI_BOLD}{settings.netuid}{ANSI_RESET} "
+        f"{ANSI_DIM}(epoch {epoch_version}){ANSI_RESET}"
     )
+    # Log actual normalized weights being published
+    for uid, weight_val in zip(uids, values):
+        score_val = scores.get(uid, 0.0)
+        bt.logging.debug(f"UID {uid}: score={score_val:.6f} -> normalized_weight={weight_val:.6f}")
     subtensor = subtensor or bt.subtensor()
     wallet = wallet or bt.wallet()
     
@@ -75,10 +91,13 @@ def publish(
         
         if blocks_since_update < epoch_length:
             bt.logging.info(
-                f"Skipping set_weights: only {blocks_since_update} blocks since last update (need {epoch_length}). "
-                "Will retry when cooldown expires."
+                f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_STOPWATCH} Skipping set_weights:{ANSI_RESET} "
+                f"only {ANSI_BOLD}{blocks_since_update}{ANSI_RESET} blocks since last update "
+                f"{ANSI_DIM}(need {epoch_length}){ANSI_RESET}. "
+                f"Will retry when cooldown expires."
             )
-            return {}
+            # Return normalized weights even when skipping, so logging is accurate
+            return weights
 
     version_key = _query_version_key(subtensor, settings.netuid)
     if version_key is None:
@@ -98,13 +117,20 @@ def publish(
         # Handle "too soon" error gracefully - this is expected during cooldown periods
         if "too soon" in str(message).lower() or "cooldown" in str(message).lower():
             bt.logging.warning(
-                f"Cannot set weights yet (cooldown period): {message}. Will retry on next epoch."
+                f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_STOPWATCH} Cannot set weights yet{ANSI_RESET} "
+                f"{ANSI_DIM}(cooldown period){ANSI_RESET}: {message}. "
+                f"Will retry on next epoch."
             )
-            # Return empty dict to indicate weights weren't published, but don't crash
-            return {}
-        bt.logging.error(f"Failed to publish weights: {message}")
+            # Return normalized weights even when skipping, so logging shows what would be published
+            return weights
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}{EMOJI_ERROR} Failed to publish weights:{ANSI_RESET} {message}"
+        )
         raise RuntimeError(f"set_weights failed: {message}")
-    bt.logging.info(f"Weights published successfully (version_key={version_key}).")
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weights published successfully{ANSI_RESET} "
+        f"{ANSI_DIM}(version_key={version_key}){ANSI_RESET}"
+    )
     return weights
 
 

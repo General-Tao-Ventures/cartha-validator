@@ -20,6 +20,13 @@ import bittensor as bt
 from .config import DEFAULT_SETTINGS, ValidatorSettings
 from .epoch import epoch_start, epoch_end
 from .indexer import replay_owner
+from .logging import (
+    ANSI_BOLD, ANSI_DIM, ANSI_GREEN, ANSI_YELLOW, ANSI_RED, ANSI_CYAN, ANSI_MAGENTA,
+    ANSI_RESET, ANSI_BRIGHT_GREEN, ANSI_BRIGHT_YELLOW, ANSI_BRIGHT_CYAN,
+    EMOJI_SUCCESS, EMOJI_ERROR, EMOJI_WARNING, EMOJI_INFO, EMOJI_ROCKET,
+    EMOJI_CHART, EMOJI_TROPHY, EMOJI_COIN, EMOJI_GEAR, EMOJI_STOPWATCH,
+    EMOJI_BLOCK, EMOJI_NETWORK
+)
 from .scoring import score_entry
 from .weights import _normalize, publish
 
@@ -375,7 +382,8 @@ def process_entries(
         if dry_run:
             weights = dict(_normalize(scores))
             bt.logging.info(
-                "Dry-run mode: computed weights for %s miners.", len(weights)
+                f"{ANSI_BOLD}{ANSI_BRIGHT_CYAN}{EMOJI_GEAR} Dry-run mode:{ANSI_RESET} "
+                f"computed weights for {ANSI_BOLD}{len(weights)}{ANSI_RESET} miners."
             )
         else:
             weights = dict(
@@ -391,7 +399,10 @@ def process_entries(
             )
     else:
         weights = {}
-        bt.logging.warning("No scores computed; emitting empty weight vector.")
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No scores computed;{ANSI_RESET} "
+            f"emitting empty weight vector."
+        )
 
     for item in details:
         item["weight"] = weights.get(item["uid"], 0.0)
@@ -433,7 +444,9 @@ def run_epoch(
     args: Any | None = None,
 ) -> Dict[str, Any]:
     bt.logging.info(
-        f"Starting validator run for epoch {epoch_version} (dry_run={dry_run})"
+        f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Starting validator run{ANSI_RESET} "
+        f"for epoch {ANSI_BOLD}{ANSI_MAGENTA}{epoch_version}{ANSI_RESET} "
+        f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
     )
     with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
         response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
@@ -501,24 +514,46 @@ def run_epoch(
     }
 
     log_file.write_text(json.dumps(log_entry, indent=2))
-    bt.logging.info(f"Weight vector saved to {log_file}")
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_BLOCK} Weight vector saved{ANSI_RESET} "
+        f"to {ANSI_DIM}{log_file}{ANSI_RESET}"
+    )
 
     if dry_run:
         # In dry-run, also print a summary to console
         bt.logging.info(
-            f"Dry-run summary: {summary['scored']} miners scored, weights computed (see log file for details)"
+            f"{ANSI_BOLD}{ANSI_BRIGHT_CYAN}{EMOJI_CHART} Dry-run summary:{ANSI_RESET} "
+            f"{ANSI_BOLD}{summary['scored']}{ANSI_RESET} miners scored, weights computed "
+            f"{ANSI_DIM}(see log file for details){ANSI_RESET}"
         )
         # Print only top 5 at info level, full list at debug level
         for i, item in enumerate(result["ranking"][:5], 1):
+            medal = EMOJI_TROPHY if i == 1 else f"#{i}"
             bt.logging.info(
-                f"#{i}: UID={item['uid']} hotkey={item['hotkey']} score={item['score']:.6f} weight={item['weight']:.6f}"
+                f"{ANSI_BOLD}{ANSI_CYAN}{medal}{ANSI_RESET} "
+                f"UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
+                f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
+                f"weight={ANSI_BRIGHT_GREEN}{item['weight']:.6f}{ANSI_RESET}"
             )
         bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
     else:
-        # In production mode, just log summary
+        # In production mode, log summary with top miners
         bt.logging.info(
-            f"Published weights for {summary['scored']} miners (epoch {epoch_version}). Full details saved to {log_file}"
+            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Published weights{ANSI_RESET} "
+            f"for {ANSI_BOLD}{summary['scored']}{ANSI_RESET} miners "
+            f"{ANSI_DIM}(epoch {epoch_version}){ANSI_RESET}\n"
+            f"{ANSI_DIM}Full details saved to {log_file}{ANSI_RESET}"
         )
+        # Show top 5 miners at info level, full list at debug level
+        for i, item in enumerate(result["ranking"][:5], 1):
+            medal = f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            bt.logging.info(
+                f"{medal}UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
+                f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
+                f"weight={ANSI_BRIGHT_GREEN}{item['weight']:.6f}{ANSI_RESET}"
+            )
+        if len(result["ranking"]) > 5:
+            bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
 
     return result
 
@@ -568,8 +603,10 @@ def main() -> None:
 
     validator_uid = metagraph.hotkeys.index(hotkey_ss58)
     bt.logging.info(
-        f"Running validator on subnet: {args.netuid} with uid {validator_uid} "
-        f"using network: {subtensor.chain_endpoint}"
+        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_NETWORK} Running validator{ANSI_RESET} "
+        f"on subnet: {ANSI_BOLD}{ANSI_CYAN}{args.netuid}{ANSI_RESET} "
+        f"with uid {ANSI_BOLD}{ANSI_MAGENTA}{validator_uid}{ANSI_RESET} "
+        f"{ANSI_DIM}(network: {subtensor.chain_endpoint}){ANSI_RESET}"
     )
 
     settings = DEFAULT_SETTINGS.model_copy(
@@ -595,7 +632,8 @@ def main() -> None:
     else:
         # Continuous daemon mode
         bt.logging.info(
-            f"Starting validator daemon (polling every {args.poll_interval} seconds, use --run-once for single execution)"
+            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_ROCKET} Starting validator daemon{ANSI_RESET} "
+            f"{ANSI_DIM}(polling every {args.poll_interval} seconds, use --run-once for single execution){ANSI_RESET}"
         )
         last_processed_epoch = None
         step = 0
@@ -603,7 +641,10 @@ def main() -> None:
         metagraph_sync_interval = 100  # Sync metagraph every 100 blocks
 
         current_block = subtensor.get_current_block()
-        bt.logging.info(f"Validator starting at block: {current_block}")
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_BLOCK} Validator starting{ANSI_RESET} "
+            f"at block: {ANSI_BOLD}{current_block}{ANSI_RESET}"
+        )
 
         while True:
             try:
@@ -611,14 +652,20 @@ def main() -> None:
                 
                 # Sync metagraph periodically
                 if current_block - last_metagraph_sync >= metagraph_sync_interval:
-                    bt.logging.info("resync_metagraph()")
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_NETWORK} resync_metagraph(){ANSI_RESET}"
+                    )
                     metagraph.sync(subtensor=subtensor)
                     last_metagraph_sync = current_block
                     network_name = config.subtensor.network if hasattr(config.subtensor, 'network') else subtensor.network
                     # Convert block to scalar if it's an array
                     block_val = int(metagraph.block) if hasattr(metagraph.block, '__iter__') and not isinstance(metagraph.block, str) else metagraph.block
                     bt.logging.info(
-                        f"Metagraph updated: metagraph(netuid:{args.netuid}, n:{metagraph.n}, block:{block_val}, network:{network_name})"
+                        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Metagraph updated{ANSI_RESET} "
+                        f"metagraph(netuid:{ANSI_BOLD}{args.netuid}{ANSI_RESET}, "
+                        f"n:{ANSI_BOLD}{metagraph.n}{ANSI_RESET}, "
+                        f"block:{ANSI_BOLD}{block_val}{ANSI_RESET}, "
+                        f"network:{ANSI_BOLD}{network_name}{ANSI_RESET})"
                     )
                 
                 current_epoch_start = epoch_start()
@@ -628,8 +675,13 @@ def main() -> None:
 
                 # Check if this is a new epoch
                 if last_processed_epoch != current_epoch_version:
-                    bt.logging.info(f"New epoch detected: {current_epoch_version}")
-                    bt.logging.info(f"step({step}) block({current_block})")
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_MAGENTA}{EMOJI_COIN} New epoch detected:{ANSI_RESET} "
+                        f"{ANSI_BOLD}{current_epoch_version}{ANSI_RESET}"
+                    )
+                    bt.logging.info(
+                        f"{ANSI_DIM}step({step}) block({current_block}){ANSI_RESET}"
+                    )
 
                     run_epoch(
                         verifier_url=args.verifier_url,
@@ -648,11 +700,15 @@ def main() -> None:
                     last_processed_epoch = current_epoch_version
                     step += 1
                     bt.logging.info(
-                        f"Processed epoch {current_epoch_version}. Next check in {args.poll_interval} seconds..."
+                        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Processed epoch{ANSI_RESET} "
+                        f"{ANSI_BOLD}{current_epoch_version}{ANSI_RESET}. "
+                        f"{ANSI_DIM}Next check in {args.poll_interval} seconds...{ANSI_RESET}"
                     )
                 else:
                     # Same epoch, just wait and log heartbeat
-                    bt.logging.info(f"Validator running... {time.time()}")
+                    bt.logging.info(
+                        f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}"
+                    )
                     
                     epoch_end_time = epoch_end(current_epoch_start)
                     now = datetime.now(timezone.utc)
@@ -674,7 +730,10 @@ def main() -> None:
                         time.sleep(args.poll_interval)
 
             except KeyboardInterrupt:
-                bt.logging.info("Validator killed by keyboard interrupt.")
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Validator killed{ANSI_RESET} "
+                    f"by keyboard interrupt."
+                )
                 break
             except Exception as exc:
                 bt.logging.error(f"Error in validator loop: {exc}", exc_info=True)
