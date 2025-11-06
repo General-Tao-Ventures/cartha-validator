@@ -31,14 +31,8 @@ def score_entry(
             boost = min(lock_days, settings.max_lock_days) / settings.max_lock_days
         raw_contrib = weight * amount_tokens * boost
         bt.logging.debug(
-            "pool=%s weight=%s amount_raw=%s amount_tokens=%s lockDays=%s boost=%s raw_contrib=%s",
-            pool_id,
-            weight,
-            amount_raw,
-            amount_tokens,
-            lock_days,
-            boost,
-            raw_contrib,
+            f"pool={pool_id} weight={weight} amount_raw={amount_raw} amount_tokens={amount_tokens} "
+            f"lockDays={lock_days} boost={boost} raw_contrib={raw_contrib}"
         )
         raw_total += raw_contrib
 
@@ -53,5 +47,5 @@ def score_entry(
 
     normalized = 1.0 - math.exp(-raw_total / temperature)
     normalized = max(0.0, min(normalized, 1.0))
-    bt.logging.debug("raw_total=%s temperature=%s normalized_score=%s", raw_total, temperature, normalized)
+    bt.logging.debug(f"raw_total={raw_total} temperature={temperature} normalized_score={normalized}")
     return normalized

@@ -27,3 +27,5 @@ dist/
 # uv / poetry
 .uv/
 .python-version
+
+validator_logs/

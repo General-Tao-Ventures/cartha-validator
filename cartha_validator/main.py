@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
+from datetime import datetime, timezone
+from pathlib import Path
 from statistics import mean
 from time import perf_counter
 from typing import Any, Callable, Dict, Iterable, List, Mapping
@@ -14,19 +18,40 @@ from web3 import Web3
 import bittensor as bt
 
 from .config import DEFAULT_SETTINGS, ValidatorSettings
-from .epoch import epoch_start
+from .epoch import epoch_start, epoch_end
 from .indexer import replay_owner
 from .scoring import score_entry
 from .weights import _normalize, publish
 
 ReplayFn = Callable[[int, str, str, int, Web3 | None], Mapping[str, Mapping[str, int]]]
-PublishFn = Callable[[Mapping[int, float], str, ValidatorSettings, Any | None, Any | None], Mapping[int, float]]
+PublishFn = Callable[
+    [Mapping[int, float], str, ValidatorSettings, Any | None, Any | None, Any | None, int | None],
+    dict[int, float],
+]
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cartha subnet validator cron runner")
-    parser.add_argument("--verifier-url", default=str(DEFAULT_SETTINGS.verifier_url), help="Verifier base URL.")
-    parser.add_argument("--netuid", type=int, default=DEFAULT_SETTINGS.netuid, help="Subnet netuid.")
+    parser.add_argument(
+        "--verifier-url",
+        default=str(DEFAULT_SETTINGS.verifier_url),
+        help="Verifier base URL.",
+    )
+    parser.add_argument(
+        "--netuid", type=int, default=DEFAULT_SETTINGS.netuid, help="Subnet netuid."
+    )
+    parser.add_argument(
+        "--wallet-name",
+        type=str,
+        required=True,
+        help="Name of the wallet (coldkey) to use for signing weights.",
+    )
+    parser.add_argument(
+        "--wallet-hotkey",
+        type=str,
+        required=True,
+        help="Name of the hotkey to use for this validator.",
+    )
     parser.add_argument(
         "--epoch",
         default=None,
@@ -48,7 +73,55 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip on-chain replay and use the verifier's amount field directly (dev/testing only).",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--run-once",
+        action="store_true",
+        help="Run once and exit (default: run continuously as daemon).",
+    )
+    parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=300,
+        help="Polling interval in seconds when running continuously (default: 300 = 5 minutes).",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default="validator_logs",
+        help="Directory to save epoch weight logs (default: validator_logs).",
+    )
+    # Add bittensor subtensor, wallet, and logging args (like template does)
+    bt.subtensor.add_args(parser)
+    bt.wallet.add_args(parser)
+    bt.logging.add_args(parser)
+    
+    # Parse args normally to get both our custom args and bt args
+    parsed_args = parser.parse_args()
+    
+    # Create bt.Config object for proper Bittensor integration
+    # bt.config() needs a parser with args added, but it will parse sys.argv itself
+    # So we create a fresh parser here
+    bt_parser = argparse.ArgumentParser()
+    bt.subtensor.add_args(bt_parser)
+    bt.wallet.add_args(bt_parser)
+    bt.logging.add_args(bt_parser)
+    config = bt.config(bt_parser)
+    
+    # Override wallet name/hotkey from our custom args (--wallet-name/--wallet-hotkey)
+    config.wallet.name = parsed_args.wallet_name
+    config.wallet.hotkey = parsed_args.wallet_hotkey
+    
+    # Override netuid from our args
+    config.netuid = parsed_args.netuid
+    
+    # Override subtensor network if provided
+    if hasattr(parsed_args, 'subtensor_network') and parsed_args.subtensor_network:
+        config.subtensor.network = parsed_args.subtensor_network
+    
+    # Attach config to parsed_args
+    parsed_args.config = config
+    
+    return parsed_args
 
 
 def _epoch_version(value: str | None) -> str:
@@ -78,7 +151,9 @@ def _resolve_block(entry: Mapping[str, Any]) -> int | None:
     return None
 
 
-def _format_positions(positions: Mapping[str, Mapping[str, int]], unit: float) -> Dict[str, Dict[str, Any]]:
+def _format_positions(
+    positions: Mapping[str, Mapping[str, int]], unit: float
+) -> Dict[str, Dict[str, Any]]:
     formatted: Dict[str, Dict[str, Any]] = {}
     for pool_id, data in positions.items():
         amount_raw = int(data.get("amount", 0))
@@ -100,6 +175,9 @@ def process_entries(
     replay_fn: ReplayFn = replay_owner,
     publish_fn: PublishFn = publish,
     subtensor: Any | None = None,
+    wallet: Any | None = None,
+    metagraph: Any | None = None,
+    validator_uid: int | None = None,
     use_verified_amounts: bool = False,
 ) -> Dict[str, Any]:
     """Replay events, score miners, and optionally publish weights."""
@@ -133,20 +211,32 @@ def process_entries(
             continue
 
         try:
-            uid = subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=hotkey, netuid=settings.netuid)
+            uid = subtensor.get_uid_for_hotkey_on_subnet(
+                hotkey_ss58=hotkey, netuid=settings.netuid
+            )
         except Exception as exc:  # pragma: no cover
-            bt.logging.error("Failed to resolve UID for hotkey %s: %s", hotkey, exc)
+            bt.logging.error(f"Failed to resolve UID for hotkey {hotkey}: {exc}")
             metrics["failures"] += 1
             continue
 
         if uid is None or uid < 0:
-            bt.logging.warning("Hotkey %s not registered on netuid %s; skipping.", hotkey, settings.netuid)
+            bt.logging.warning(
+                "Hotkey %s not registered on netuid %s; skipping.",
+                hotkey,
+                settings.netuid,
+            )
             metrics["missing_uid"] += 1
             metrics["skipped"] += 1
             continue
 
         uid = int(uid)
-        grouped.setdefault(uid, {"hotkey": hotkey, "slot_uid": entry.get("slot_uid") or entry.get("slotUID")})
+        grouped.setdefault(
+            uid,
+            {
+                "hotkey": hotkey,
+                "slot_uid": entry.get("slot_uid") or entry.get("slotUID"),
+            },
+        )
         sources.setdefault(uid, []).append(entry)
 
     metrics["total_miners"] = len(grouped)
@@ -161,7 +251,9 @@ def process_entries(
                 pool_id = entry.get("pool_id") or entry.get("poolId") or "default"
                 amount = int(entry.get("amount", 0))
                 lock_days = settings.max_lock_days
-                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
+                existing = combined_positions.setdefault(
+                    pool_id, {"amount": 0, "lockDays": 0}
+                )
                 existing["amount"] += amount
                 existing["lockDays"] = max(existing["lockDays"], lock_days)
                 continue
@@ -191,7 +283,9 @@ def process_entries(
                     provider = Web3(Web3.HTTPProvider(rpc_url))
                     web3_cache[chain_id] = provider
             except Exception as exc:
-                bt.logging.error("Failed to initialise Web3 provider for chain %s: %s", chain_id, exc)
+                bt.logging.error(
+                    "Failed to initialise Web3 provider for chain %s: %s", chain_id, exc
+                )
                 metrics["failures"] += 1
                 miner_failed = True
                 continue
@@ -208,16 +302,29 @@ def process_entries(
                         at_block,
                     )
                 except Exception as exc:  # pragma: no cover
-                    bt.logging.error("Unable to infer block for uid=%s chain=%s: %s", uid, chain_id, exc)
+                    bt.logging.error(
+                        "Unable to infer block for uid=%s chain=%s: %s",
+                        uid,
+                        chain_id,
+                        exc,
+                    )
                     metrics["failures"] += 1
                     miner_failed = True
                     continue
 
             replay_start = perf_counter()
             try:
-                positions = replay_fn(chain_id, vault, owner, int(at_block), web3=provider)
+                positions = replay_fn(
+                    chain_id, vault, owner, int(at_block), web3=provider
+                )
             except Exception as exc:  # pragma: no cover
-                bt.logging.error("Replay failed for uid=%s chain=%s owner=%s: %s", uid, chain_id, owner, exc)
+                bt.logging.error(
+                    "Replay failed for uid=%s chain=%s owner=%s: %s",
+                    uid,
+                    chain_id,
+                    owner,
+                    exc,
+                )
                 metrics["failures"] += 1
                 miner_failed = True
                 continue
@@ -227,14 +334,20 @@ def process_entries(
 
             try:
                 current_block = provider.eth.block_number
-                metrics["rpc_lag_blocks"].append(max(0, int(current_block) - int(at_block)))
+                metrics["rpc_lag_blocks"].append(
+                    max(0, int(current_block) - int(at_block))
+                )
             except Exception:  # pragma: no cover
                 bt.logging.debug("Failed to compute RPC lag for chain %s", chain_id)
 
             for pool_id, data in positions.items():
-                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
+                existing = combined_positions.setdefault(
+                    pool_id, {"amount": 0, "lockDays": 0}
+                )
                 existing["amount"] += int(data.get("amount", 0))
-                existing["lockDays"] = max(existing["lockDays"], int(data.get("lockDays", 0)))
+                existing["lockDays"] = max(
+                    existing["lockDays"], int(data.get("lockDays", 0))
+                )
 
         if not combined_positions:
             if miner_failed:
@@ -261,9 +374,21 @@ def process_entries(
     if scores:
         if dry_run:
             weights = dict(_normalize(scores))
-            bt.logging.info("Dry-run mode: computed weights for %s miners.", len(weights))
+            bt.logging.info(
+                "Dry-run mode: computed weights for %s miners.", len(weights)
+            )
         else:
-            weights = dict(publish_fn(scores, epoch_version=epoch_version, settings=settings))
+            weights = dict(
+                publish_fn(
+                    scores,
+                    epoch_version=epoch_version,
+                    settings=settings,
+                    subtensor=subtensor,
+                    wallet=wallet,
+                    metagraph=metagraph,
+                    validator_uid=validator_uid,
+                )
+            )
     else:
         weights = {}
         bt.logging.warning("No scores computed; emitting empty weight vector.")
@@ -277,10 +402,18 @@ def process_entries(
         **metrics,
         "elapsed_ms": (perf_counter() - start_time) * 1000,
         "avg_replay_ms": mean(metrics["replay_ms"]) if metrics["replay_ms"] else 0.0,
-        "max_rpc_lag": max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0,
+        "max_rpc_lag": (
+            max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0
+        ),
         "dry_run": dry_run,
     }
-    return {"scores": scores, "weights": weights, "ranking": details, "summary": summary, "unit": unit}
+    return {
+        "scores": scores,
+        "weights": weights,
+        "ranking": details,
+        "summary": summary,
+        "unit": unit,
+    }
 
 
 def run_epoch(
@@ -293,14 +426,24 @@ def run_epoch(
     replay_fn: ReplayFn = replay_owner,
     publish_fn: PublishFn = publish,
     use_verified_amounts: bool = False,
+    subtensor: Any | None = None,
+    wallet: Any | None = None,
+    metagraph: Any | None = None,
+    validator_uid: int | None = None,
+    args: Any | None = None,
 ) -> Dict[str, Any]:
-    bt.logging.info("Starting validator run for epoch %s (dry_run=%s)", epoch_version, dry_run)
+    bt.logging.info(
+        f"Starting validator run for epoch {epoch_version} (dry_run={dry_run})"
+    )
     with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
         response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
         response.raise_for_status()
         entries = response.json()
 
-    subtensor = bt.subtensor()
+    if subtensor is None:
+        subtensor = bt.subtensor()
+    if wallet is None:
+        wallet = bt.wallet()
 
     result = process_entries(
         entries,
@@ -310,61 +453,233 @@ def run_epoch(
         replay_fn=replay_fn,
         publish_fn=publish_fn,
         subtensor=subtensor,
+        wallet=wallet,
+        metagraph=metagraph,
+        validator_uid=validator_uid,
         use_verified_amounts=use_verified_amounts,
     )
 
     summary = result["summary"]
     bt.logging.info(
-        (
-            "Epoch %s summary: rows=%s miners=%s scored=%s skipped=%s failures=%s "
-            "missingUid=%s inferredBlocks=%s avgReplay=%.2fms maxLag=%s dryRun=%s"
-        ),
-        epoch_version,
-        summary["total_rows"],
-        summary["total_miners"],
-        summary["scored"],
-        summary["skipped"],
-        summary["failures"],
-        summary["missing_uid"],
-        summary["inferred_blocks"],
-        summary["avg_replay_ms"],
-        summary["max_rpc_lag"],
-        dry_run,
+        f"Epoch {epoch_version} summary: rows={summary['total_rows']} miners={summary['total_miners']} "
+        f"scored={summary['scored']} skipped={summary['skipped']} failures={summary['failures']} "
+        f"missingUid={summary['missing_uid']} inferredBlocks={summary['inferred_blocks']} "
+        f"avgReplay={summary['avg_replay_ms']:.2f}ms maxLag={summary['max_rpc_lag']} dryRun={dry_run}"
     )
 
+    # Save detailed ranking to log file
+    log_dir_str = (
+        getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
+    )
+    log_dir = Path(log_dir_str)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    log_file = (
+        log_dir
+        / f"weights_{epoch_version.replace(':', '-').replace('T', '_').replace('Z', '')}_{timestamp}.json"
+    )
+
+    ranking_payload = [
+        {
+            "uid": item["uid"],
+            "hotkey": item["hotkey"],
+            "slot_uid": item.get("slot_uid"),
+            "score": round(item["score"], 6),
+            "weight": round(item["weight"], 6),
+            "positions": _format_positions(item["positions"], result["unit"]),
+        }
+        for item in result["ranking"]
+    ]
+
+    log_entry = {
+        "epoch_version": epoch_version,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dry_run": dry_run,
+        "summary": summary,
+        "ranking": ranking_payload,
+    }
+
+    log_file.write_text(json.dumps(log_entry, indent=2))
+    bt.logging.info(f"Weight vector saved to {log_file}")
+
     if dry_run:
-        unit = result["unit"]
-        ranking_payload = [
-            {
-                "uid": item["uid"],
-                "hotkey": item["hotkey"],
-                "score": round(item["score"], 6),
-                "weight": round(item["weight"], 6),
-                "positions": _format_positions(item["positions"], unit),
-            }
-            for item in result["ranking"]
-        ]
-        json_blob = json.dumps(ranking_payload, indent=2)
-        bt.logging.info("Dry-run weight vector:\n%s", json_blob)
-        print(json_blob)
+        # In dry-run, also print a summary to console
+        bt.logging.info(
+            f"Dry-run summary: {summary['scored']} miners scored, weights computed (see log file for details)"
+        )
+        # Print only top 5 at info level, full list at debug level
+        for i, item in enumerate(result["ranking"][:5], 1):
+            bt.logging.info(
+                f"#{i}: UID={item['uid']} hotkey={item['hotkey']} score={item['score']:.6f} weight={item['weight']:.6f}"
+            )
+        bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
+    else:
+        # In production mode, just log summary
+        bt.logging.info(
+            f"Published weights for {summary['scored']} miners (epoch {epoch_version}). Full details saved to {log_file}"
+        )
 
     return result
 
 
 def main() -> None:
     args = _parse_args()
-    epoch_version = _epoch_version(args.epoch)
+    config = args.config
+
+    # Set up Bittensor logging FIRST with proper config (like template does)
+    bt.logging.set_config(config=config.logging)
+    
+    # Log the full config for reference (like template does)
+    bt.logging.info(config)
+    
+    bt.logging.info("Setting up bittensor objects.")
+    
+    # Initialize wallet using config (ensures proper Bittensor integration)
+    wallet = bt.wallet(config=config)
+    bt.logging.info(f"Wallet: {wallet}")
+    
+    # Initialize subtensor using config
+    subtensor = bt.subtensor(config=config)
+    bt.logging.info(f"Subtensor: {subtensor}")
+
+    # Create and sync metagraph (like template does)
+    metagraph = subtensor.metagraph(args.netuid)
+    bt.logging.info(f"Metagraph: {metagraph}")
+    
+    # Sync metagraph initially to get latest state
+    metagraph.sync(subtensor=subtensor)
+
+    # Check if validator is registered
+    hotkey_ss58 = wallet.hotkey.ss58_address
+    is_registered = subtensor.is_hotkey_registered_on_subnet(
+        hotkey_ss58=hotkey_ss58,
+        netuid=args.netuid,
+    )
+
+    if not is_registered:
+        bt.logging.error(
+            f"Wallet: {wallet} is not registered on netuid {args.netuid}. "
+            "Please register the hotkey before running the validator."
+        )
+        raise RuntimeError(
+            f"Validator not registered: hotkey {hotkey_ss58} not found on netuid {args.netuid}"
+        )
+
+    validator_uid = metagraph.hotkeys.index(hotkey_ss58)
+    bt.logging.info(
+        f"Running validator on subnet: {args.netuid} with uid {validator_uid} "
+        f"using network: {subtensor.chain_endpoint}"
+    )
+
     settings = DEFAULT_SETTINGS.model_copy(
         update={"verifier_url": args.verifier_url, "netuid": args.netuid},
     )
-    run_epoch(
-        verifier_url=args.verifier_url,
-        epoch_version=epoch_version,
-        settings=settings,
-        timeout=args.timeout,
-        dry_run=args.dry_run,
-        use_verified_amounts=args.use_verified_amounts,
-    )
+
+    if args.run_once:
+        # Single run mode
+        epoch_version = _epoch_version(args.epoch)
+        run_epoch(
+            verifier_url=args.verifier_url,
+            epoch_version=epoch_version,
+            settings=settings,
+            timeout=args.timeout,
+            dry_run=args.dry_run,
+            use_verified_amounts=args.use_verified_amounts,
+            subtensor=subtensor,
+            wallet=wallet,
+            metagraph=metagraph,
+            validator_uid=validator_uid,
+            args=args,
+        )
+    else:
+        # Continuous daemon mode
+        bt.logging.info(
+            f"Starting validator daemon (polling every {args.poll_interval} seconds, use --run-once for single execution)"
+        )
+        last_processed_epoch = None
+        step = 0
+        last_metagraph_sync = 0
+        metagraph_sync_interval = 100  # Sync metagraph every 100 blocks
+
+        current_block = subtensor.get_current_block()
+        bt.logging.info(f"Validator starting at block: {current_block}")
+
+        while True:
+            try:
+                current_block = subtensor.get_current_block()
+                
+                # Sync metagraph periodically
+                if current_block - last_metagraph_sync >= metagraph_sync_interval:
+                    bt.logging.info("resync_metagraph()")
+                    metagraph.sync(subtensor=subtensor)
+                    last_metagraph_sync = current_block
+                    network_name = config.subtensor.network if hasattr(config.subtensor, 'network') else subtensor.network
+                    # Convert block to scalar if it's an array
+                    block_val = int(metagraph.block) if hasattr(metagraph.block, '__iter__') and not isinstance(metagraph.block, str) else metagraph.block
+                    bt.logging.info(
+                        f"Metagraph updated: metagraph(netuid:{args.netuid}, n:{metagraph.n}, block:{block_val}, network:{network_name})"
+                    )
+                
+                current_epoch_start = epoch_start()
+                current_epoch_version = current_epoch_start.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+
+                # Check if this is a new epoch
+                if last_processed_epoch != current_epoch_version:
+                    bt.logging.info(f"New epoch detected: {current_epoch_version}")
+                    bt.logging.info(f"step({step}) block({current_block})")
+
+                    run_epoch(
+                        verifier_url=args.verifier_url,
+                        epoch_version=current_epoch_version,
+                        settings=settings,
+                        timeout=args.timeout,
+                        dry_run=args.dry_run,
+                        use_verified_amounts=args.use_verified_amounts,
+                        subtensor=subtensor,
+                        wallet=wallet,
+                        metagraph=metagraph,
+                        validator_uid=validator_uid,
+                        args=args,
+                    )
+
+                    last_processed_epoch = current_epoch_version
+                    step += 1
+                    bt.logging.info(
+                        f"Processed epoch {current_epoch_version}. Next check in {args.poll_interval} seconds..."
+                    )
+                else:
+                    # Same epoch, just wait and log heartbeat
+                    bt.logging.info(f"Validator running... {time.time()}")
+                    
+                    epoch_end_time = epoch_end(current_epoch_start)
+                    now = datetime.now(timezone.utc)
+                    time_until_next = (
+                        epoch_end_time - now
+                    ).total_seconds() + 60  # 1 minute after epoch ends
+
+                    if time_until_next > 0:
+                        wait_time = min(time_until_next, args.poll_interval)
+                        bt.logging.debug(
+                            f"Current epoch: {current_epoch_version} (ends {epoch_end_time}). Waiting {wait_time} seconds until next check..."
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        # Should be a new epoch by now, but check in a short interval
+                        bt.logging.debug(
+                            f"Epoch should have ended, checking again in {args.poll_interval} seconds..."
+                        )
+                        time.sleep(args.poll_interval)
+
+            except KeyboardInterrupt:
+                bt.logging.info("Validator killed by keyboard interrupt.")
+                break
+            except Exception as exc:
+                bt.logging.error(f"Error in validator loop: {exc}", exc_info=True)
+                bt.logging.info(f"Retrying in {args.poll_interval} seconds...")
+                time.sleep(args.poll_interval)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -22,7 +22,7 @@ def epoch_start(reference: datetime | None = None) -> datetime:
         minute=0,
         tzinfo=timezone.utc,
     ) - timedelta(days=days_since_friday)
-    bt.logging.debug("Computed epoch start %s from reference %s", start, reference)
+    bt.logging.debug(f"Computed epoch start {start} from reference {reference}")
     return start
 
 
@@ -30,5 +30,5 @@ def epoch_end(reference: datetime | None = None) -> datetime:
     """Return the end timestamp (Thu 23:59 UTC) for the epoch containing reference."""
     start = epoch_start(reference)
     end = start + EPOCH_LENGTH - timedelta(minutes=1)
-    bt.logging.debug("Computed epoch end %s", end)
+    bt.logging.debug(f"Computed epoch end {end}")
     return end

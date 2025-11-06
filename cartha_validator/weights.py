@@ -48,6 +48,8 @@ def publish(
     settings: ValidatorSettings = DEFAULT_SETTINGS,
     subtensor: Any | None = None,
     wallet: Any | None = None,
+    metagraph: Any | None = None,
+    validator_uid: int | None = None,
 ) -> dict[int, float]:
     """Normalize scores and publish weights to the subnet."""
     if not scores:
@@ -59,28 +61,50 @@ def publish(
     values = list(weights.values())
 
     bt.logging.info(
-        "Publishing %s weights for netuid=%s epoch=%s",
-        len(uids),
-        settings.netuid,
-        epoch_version,
+        f"Publishing {len(uids)} weights for netuid={settings.netuid} epoch={epoch_version}"
     )
     subtensor = subtensor or bt.subtensor()
     wallet = wallet or bt.wallet()
+    
+    # Check if enough blocks have passed since last weight update (if metagraph available)
+    if metagraph is not None and validator_uid is not None:
+        current_block = subtensor.get_current_block()
+        last_update = metagraph.last_update[validator_uid] if hasattr(metagraph, 'last_update') and validator_uid < len(metagraph.last_update) else 0
+        blocks_since_update = current_block - last_update
+        epoch_length = getattr(settings, 'epoch_length_blocks', 100)  # Default epoch length
+        
+        if blocks_since_update < epoch_length:
+            bt.logging.info(
+                f"Skipping set_weights: only {blocks_since_update} blocks since last update (need {epoch_length}). "
+                "Will retry when cooldown expires."
+            )
+            return {}
+
     version_key = _query_version_key(subtensor, settings.netuid)
     if version_key is None:
         version_key = _version_key(epoch_version)
-        bt.logging.debug("Falling back to derived version_key=%s", version_key)
+        bt.logging.debug(f"Falling back to derived version_key={version_key}")
+    
     success, message = subtensor.set_weights(
         wallet=wallet,
         netuid=settings.netuid,
         uids=uids,
         weights=values,
         version_key=version_key,
+        wait_for_inclusion=False,
+        wait_for_finalization=False,
     )
     if not success:
-        bt.logging.error("Failed to publish weights: %s", message)
+        # Handle "too soon" error gracefully - this is expected during cooldown periods
+        if "too soon" in str(message).lower() or "cooldown" in str(message).lower():
+            bt.logging.warning(
+                f"Cannot set weights yet (cooldown period): {message}. Will retry on next epoch."
+            )
+            # Return empty dict to indicate weights weren't published, but don't crash
+            return {}
+        bt.logging.error(f"Failed to publish weights: {message}")
         raise RuntimeError(f"set_weights failed: {message}")
-    bt.logging.info("Weights published (version_key=%s).", version_key)
+    bt.logging.info(f"Weights published successfully (version_key={version_key}).")
     return weights
 
 
