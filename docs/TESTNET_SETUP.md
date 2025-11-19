@@ -15,16 +15,19 @@ This guide will help you set up and run a Cartha validator on the public testnet
 If you don't have `uv` installed, you can install it with:
 
 **macOS/Linux:**
+
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (PowerShell):**
+
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 **Or via pip:**
+
 ```bash
 pip install uv
 ```
@@ -43,6 +46,7 @@ uv sync  # Creates .venv automatically and installs dependencies
 ```
 
 Then use `uv run` to execute commands (it automatically uses the project's virtual environment):
+
 ```bash
 uv run python -m cartha_validator.main --help  # Runs in the project's virtual environment
 ```
@@ -101,6 +105,7 @@ uv run python -m cartha_validator.main \
 ```
 
 This will:
+
 - Fetch verified miners from the verifier
 - Score miners using verifier-supplied amounts (no RPC replay)
 - Print the computed weights without publishing
@@ -159,6 +164,7 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners?epoch=$(date -u +%Y-%m-%dT00:00:
 ### Step 2: Score Miners
 
 For each verified miner, the validator:
+
 1. (Optional) Replays on-chain events to get current positions
 2. Calculates scores based on:
    - Locked amount
@@ -240,6 +246,7 @@ score_temperature = 1000.0
 The validator uses Bittensor's logging system and **debug logging is enabled by default** for detailed diagnostics.
 
 **Logging Levels:**
+
 - **Debug** (default): Detailed information including replay timing, RPC lag, full rankings, per-miner scoring
 - **Info**: General progress and important events
 - **Warning**: Non-critical issues
@@ -279,6 +286,7 @@ uv run python -m cartha_validator.main \
 ```
 
 **What Debug Logging Shows:**
+
 - Per-miner replay timing and RPC lag
 - Full ranking details (all miners, not just top 5)
 - Detailed scoring calculations
@@ -320,6 +328,7 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners" | jq 'length'
 **Problem**: Validator can't connect to verifier
 
 **Solution**:
+
 ```bash
 # Verify verifier URL
 echo $CARTHA_VERIFIER_URL
@@ -337,6 +346,7 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 **Problem**: Validator can't connect to RPC endpoints (e.g., `Connection refused` to `localhost:8545`)
 
 **Solution**:
+
 - **For testnet**: You **must** use `--use-verified-amounts` flag. RPC endpoints are not available in testnet demo mode.
 - The validator will automatically show a helpful tip when RPC connection fails, suggesting to use `--use-verified-amounts`
 - For production/mainnet: Verify RPC URLs are configured correctly in `config.py` or via environment variables
@@ -347,6 +357,7 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 **Problem**: Verifier returns empty list
 
 **Solution**:
+
 - Check if miners have submitted lock proofs
 - Verify epoch version matches current epoch
 - Check verifier logs for issues
@@ -356,6 +367,7 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 **Problem**: Can't publish weights to subnet
 
 **Solution**:
+
 - Verify wallet is registered as validator
 - Check Bittensor network connectivity
 - Ensure `--dry-run` is not set if you want to publish
@@ -366,6 +378,7 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 **Problem**: Errors during scoring calculation
 
 **Solution**:
+
 - Check validator logs for details
 - Verify miner data format from verifier
 - Ensure pool weights are configured correctly
@@ -387,6 +400,7 @@ uv run python -m cartha_validator.main \
 ```
 
 Expected output:
+
 - List of verified miners
 - Computed scores
 - Normalized weights vector
@@ -401,6 +415,7 @@ cat validator_logs/weights_*.json | jq .
 ```
 
 Verify:
+
 - Scores are in [0, 1] range
 - Weights sum to 1.0
 - Miners are ranked correctly
@@ -495,4 +510,3 @@ WantedBy=multi-user.target
 - [Testnet Guide](../../TESTNET_GUIDE.md) - Overall testnet overview
 - [Scoring Logic](../cartha_validator/scoring.py) - Scoring implementation
 - [Weights Publishing](../cartha_validator/weights.py) - Weight calculation
-

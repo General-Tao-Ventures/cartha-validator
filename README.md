@@ -30,15 +30,18 @@ docs/                architecture and operator notes
 ## Running Against a Local Verifier
 
 1. **Launch the verifier**
+
    ```bash
    cd ../cartha-verifier
    cp ops/.env.example .env                 # adjust for SQLite or Postgres
    uv sync
    uv run python -m uvicorn cartha_verifier.app:APP --host 127.0.0.1 --port 8000
    ```
+
    Seed mock data if you want a local dry-run (e.g. using the snippet in `scripts/mock_scenarios.py`).
 
 2. **Dry-run the validator (no on-chain replay)**
+
    ```bash
    cd ../cartha-subnet-validator
    source .venv/bin/activate
@@ -48,6 +51,7 @@ docs/                architecture and operator notes
      --dry-run \
      --use-verified-amounts
    ```
+
    The command fetches the frozen miner list, derives scores using verifier-supplied amounts, and
    prints the ranked vector instead of publishing it to the chain.
 
