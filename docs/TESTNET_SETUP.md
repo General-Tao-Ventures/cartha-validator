@@ -189,6 +189,9 @@ Key options:
 - `--timeout`: HTTP timeout for verifier calls (default: 15s)
 - `--dry-run`: Skip `set_weights`, print computed vector
 - `--use-verified-amounts`: Use verifier amounts directly (bypass RPC replay)
+  - **⚠️ SECURITY**: This flag is **FORBIDDEN on mainnet** (netuid 35, network "finney")
+  - **Required for testnet**: Use this flag when RPC endpoints are not available
+  - **Mainnet enforcement**: The validator will refuse to run with this flag on mainnet
 - `--logging.debug`: Enable debug logging (enabled by default, use `--logging.debug=False` to disable)
 
 ### Configuration File

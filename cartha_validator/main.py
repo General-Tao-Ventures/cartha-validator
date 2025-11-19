@@ -493,6 +493,29 @@ def run_epoch(
         f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
     )
 
+    # SECURITY: Detect mainnet and enforce RPC validation (defense in depth)
+    is_mainnet = False
+    if subtensor is not None:
+        network_name = getattr(subtensor, "network", None)
+        if network_name == "finney":
+            is_mainnet = True
+    if metagraph is not None and hasattr(metagraph, "netuid"):
+        if metagraph.netuid == 35:
+            is_mainnet = True
+    if settings.netuid == 35:
+        is_mainnet = True
+
+    # SECURITY: Block --use-verified-amounts on mainnet (defense in depth)
+    if is_mainnet and use_verified_amounts:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}🚨 SECURITY ERROR:{ANSI_RESET} "
+            f"--use-verified-amounts is FORBIDDEN on mainnet!"
+        )
+        raise RuntimeError(
+            "Security violation: --use-verified-amounts cannot be used on mainnet. "
+            "RPC validation is required for production security."
+        )
+
     # Check if we're in testnet mode and warn about RPC requirements
     if not use_verified_amounts:
         # Check if RPC URLs are configured for the chains we might encounter
@@ -679,12 +702,60 @@ def main() -> None:
         )
 
     validator_uid = metagraph.hotkeys.index(hotkey_ss58)
+
+    # Detect network type for security enforcement
+    network_name = (
+        config.subtensor.network
+        if hasattr(config.subtensor, "network")
+        else subtensor.network
+    )
+    is_mainnet = network_name == "finney" or args.netuid == 35
+
     bt.logging.info(
         f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_NETWORK} Running validator{ANSI_RESET} "
         f"on subnet: {ANSI_BOLD}{ANSI_CYAN}{args.netuid}{ANSI_RESET} "
         f"with uid {ANSI_BOLD}{ANSI_MAGENTA}{validator_uid}{ANSI_RESET} "
         f"{ANSI_DIM}(network: {subtensor.chain_endpoint}){ANSI_RESET}"
     )
+
+    # SECURITY: Enforce RPC validation on mainnet
+    if is_mainnet and args.use_verified_amounts:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}🚨 SECURITY ERROR:{ANSI_RESET}\n"
+            f"  {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} is {ANSI_BOLD}FORBIDDEN{ANSI_RESET} on mainnet!\n"
+            f"  {ANSI_DIM}On-chain RPC validation is REQUIRED for production security.{ANSI_RESET}\n"
+            f"  {ANSI_BOLD}Reason:{ANSI_RESET} Validators must verify locked assets on-chain to prevent fraud.\n"
+            f"  {ANSI_BOLD}Action:{ANSI_RESET} Remove {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} and configure RPC endpoints."
+        )
+        raise RuntimeError(
+            "Security violation: --use-verified-amounts cannot be used on mainnet. "
+            "RPC validation is required for production security."
+        )
+
+    # Warn if RPC endpoints are missing on mainnet
+    if is_mainnet and not args.use_verified_amounts:
+        settings = DEFAULT_SETTINGS.model_copy(
+            update={"verifier_url": args.verifier_url, "netuid": args.netuid},
+        )
+        if not settings.rpc_urls:
+            bt.logging.error(
+                f"{ANSI_BOLD}{ANSI_RED}🚨 CONFIGURATION ERROR:{ANSI_RESET}\n"
+                f"  No RPC endpoints configured for mainnet validation!\n"
+                f"  {ANSI_BOLD}Required:{ANSI_RESET} Configure RPC URLs in {ANSI_BOLD}config.py{ANSI_RESET} or via environment variables.\n"
+                f"  {ANSI_DIM}Example:{ANSI_RESET} Set RPC_URLS environment variable or edit DEFAULT_SETTINGS.rpc_urls"
+            )
+            raise RuntimeError(
+                "RPC endpoints must be configured for mainnet. "
+                "On-chain validation is required for production security."
+            )
+        # Check for localhost RPC on mainnet (likely misconfiguration)
+        for chain_id, rpc_url in settings.rpc_urls.items():
+            if "localhost" in rpc_url or "127.0.0.1" in rpc_url:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  WARNING:{ANSI_RESET}\n"
+                    f"  Chain {chain_id} is configured with localhost RPC ({rpc_url}).\n"
+                    f"  {ANSI_DIM}This is likely incorrect for mainnet. Verify your RPC configuration.{ANSI_RESET}"
+                )
 
     settings = DEFAULT_SETTINGS.model_copy(
         update={"verifier_url": args.verifier_url, "netuid": args.netuid},

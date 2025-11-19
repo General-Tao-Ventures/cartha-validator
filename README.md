@@ -66,7 +66,7 @@ docs/                architecture and operator notes
 | `--epoch` | Override epoch version (defaults to current Friday 00:00 UTC). |
 | `--timeout` | HTTP timeout (s) for verifier calls, default 15. |
 | `--dry-run` | Skip `set_weights`; pretty-print the computed vector. |
-| `--use-verified-amounts` | Development helper: bypass EVM replay and use the verifier’s `amount` field directly. |
+| `--use-verified-amounts` | Development helper: bypass EVM replay and use the verifier's `amount` field directly. **⚠️ SECURITY: FORBIDDEN on mainnet (netuid 35, network "finney")** - The validator will refuse to run with this flag on mainnet to enforce on-chain validation. |
 
 All logging goes through `bittensor.logging`. Run with `--logging.debug` (Bittensor CLI flag) to see
 per-miner diagnostics (replay timing, RPC lag, scoring contributions, etc.).
