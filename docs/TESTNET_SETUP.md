@@ -104,7 +104,14 @@ This will:
 - Fetch verified miners from the verifier
 - Score miners using verifier-supplied amounts (no RPC replay)
 - Print the computed weights without publishing
+- Show detailed debug logs (enabled by default) including:
+  - Per-miner scoring details
+  - Replay timing and RPC lag (if using full replay)
+  - Full ranking with all miners
+  - Position aggregation by pool
 - Help you verify the scoring logic
+
+**Note**: Debug logging is enabled by default. To reduce verbosity, add `--logging.debug=False`.
 
 ### Full Replay Mode
 
@@ -182,6 +189,7 @@ Key options:
 - `--timeout`: HTTP timeout for verifier calls (default: 15s)
 - `--dry-run`: Skip `set_weights`, print computed vector
 - `--use-verified-amounts`: Use verifier amounts directly (bypass RPC replay)
+- `--logging.debug`: Enable debug logging (enabled by default, use `--logging.debug=False` to disable)
 
 ### Configuration File
 
@@ -223,6 +231,57 @@ score_temperature = 1000.0
 - Validators should run after epoch freeze
 
 ## Monitoring
+
+### Logging
+
+The validator uses Bittensor's logging system and **debug logging is enabled by default** for detailed diagnostics.
+
+**Logging Levels:**
+- **Debug** (default): Detailed information including replay timing, RPC lag, full rankings, per-miner scoring
+- **Info**: General progress and important events
+- **Warning**: Non-critical issues
+- **Error**: Critical errors
+
+**Controlling Logging:**
+
+```bash
+# Debug logging enabled by default (shows all details)
+uv run python -m cartha_validator.main \
+  --verifier-url "${CARTHA_VERIFIER_URL}" \
+  --netuid 78 \
+  --subtensor.network test \
+  --wallet-name <wallet> \
+  --wallet-hotkey <hotkey> \
+  --dry-run
+
+# Disable debug logging (show only info and above)
+uv run python -m cartha_validator.main \
+  --verifier-url "${CARTHA_VERIFIER_URL}" \
+  --netuid 78 \
+  --subtensor.network test \
+  --wallet-name <wallet> \
+  --wallet-hotkey <hotkey> \
+  --logging.debug=False \
+  --dry-run
+
+# Explicitly enable debug (redundant since it's default, but shown for clarity)
+uv run python -m cartha_validator.main \
+  --verifier-url "${CARTHA_VERIFIER_URL}" \
+  --netuid 78 \
+  --subtensor.network test \
+  --wallet-name <wallet> \
+  --wallet-hotkey <hotkey> \
+  --logging.debug \
+  --dry-run
+```
+
+**What Debug Logging Shows:**
+- Per-miner replay timing and RPC lag
+- Full ranking details (all miners, not just top 5)
+- Detailed scoring calculations
+- Position aggregation by pool
+- Epoch detection and processing steps
+- Metagraph sync information
 
 ### Logs
 

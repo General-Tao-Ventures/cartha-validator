@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,18 +22,44 @@ from .config import DEFAULT_SETTINGS, ValidatorSettings
 from .epoch import epoch_start, epoch_end
 from .indexer import replay_owner
 from .logging import (
-    ANSI_BOLD, ANSI_DIM, ANSI_GREEN, ANSI_YELLOW, ANSI_RED, ANSI_CYAN, ANSI_MAGENTA,
-    ANSI_RESET, ANSI_BRIGHT_GREEN, ANSI_BRIGHT_YELLOW, ANSI_BRIGHT_CYAN,
-    EMOJI_SUCCESS, EMOJI_ERROR, EMOJI_WARNING, EMOJI_INFO, EMOJI_ROCKET,
-    EMOJI_CHART, EMOJI_TROPHY, EMOJI_COIN, EMOJI_GEAR, EMOJI_STOPWATCH,
-    EMOJI_BLOCK, EMOJI_NETWORK
+    ANSI_BOLD,
+    ANSI_DIM,
+    ANSI_GREEN,
+    ANSI_YELLOW,
+    ANSI_RED,
+    ANSI_CYAN,
+    ANSI_MAGENTA,
+    ANSI_RESET,
+    ANSI_BRIGHT_GREEN,
+    ANSI_BRIGHT_YELLOW,
+    ANSI_BRIGHT_CYAN,
+    EMOJI_SUCCESS,
+    EMOJI_ERROR,
+    EMOJI_WARNING,
+    EMOJI_INFO,
+    EMOJI_ROCKET,
+    EMOJI_CHART,
+    EMOJI_TROPHY,
+    EMOJI_COIN,
+    EMOJI_GEAR,
+    EMOJI_STOPWATCH,
+    EMOJI_BLOCK,
+    EMOJI_NETWORK,
 )
 from .scoring import score_entry
 from .weights import _normalize, publish
 
 ReplayFn = Callable[[int, str, str, int, Web3 | None], Mapping[str, Mapping[str, int]]]
 PublishFn = Callable[
-    [Mapping[int, float], str, ValidatorSettings, Any | None, Any | None, Any | None, int | None],
+    [
+        Mapping[int, float],
+        str,
+        ValidatorSettings,
+        Any | None,
+        Any | None,
+        Any | None,
+        int | None,
+    ],
     dict[int, float],
 ]
 
@@ -101,10 +128,15 @@ def _parse_args() -> argparse.Namespace:
     bt.subtensor.add_args(parser)
     bt.wallet.add_args(parser)
     bt.logging.add_args(parser)
-    
+
     # Parse args normally to get both our custom args and bt args
     parsed_args = parser.parse_args()
-    
+
+    # Check if --logging.debug was explicitly set to False in command line
+    debug_explicitly_disabled = (
+        "--logging.debug=False" in sys.argv or "--no-logging.debug" in sys.argv
+    )
+
     # Create bt.Config object for proper Bittensor integration
     # bt.config() needs a parser with args added, but it will parse sys.argv itself
     # So we create a fresh parser here
@@ -113,21 +145,25 @@ def _parse_args() -> argparse.Namespace:
     bt.wallet.add_args(bt_parser)
     bt.logging.add_args(bt_parser)
     config = bt.config(bt_parser)
-    
+
+    # Enable debug logging by default unless explicitly disabled
+    if not debug_explicitly_disabled:
+        config.logging.debug = True
+
     # Override wallet name/hotkey from our custom args (--wallet-name/--wallet-hotkey)
     config.wallet.name = parsed_args.wallet_name
     config.wallet.hotkey = parsed_args.wallet_hotkey
-    
+
     # Override netuid from our args
     config.netuid = parsed_args.netuid
-    
+
     # Override subtensor network if provided
-    if hasattr(parsed_args, 'subtensor_network') and parsed_args.subtensor_network:
+    if hasattr(parsed_args, "subtensor_network") and parsed_args.subtensor_network:
         config.subtensor.network = parsed_args.subtensor_network
-    
+
     # Attach config to parsed_args
     parsed_args.config = config
-    
+
     return parsed_args
 
 
@@ -546,7 +582,9 @@ def run_epoch(
         )
         # Show top 5 miners at info level, full list at debug level
         for i, item in enumerate(result["ranking"][:5], 1):
-            medal = f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            medal = (
+                f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            )
             bt.logging.info(
                 f"{medal}UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
                 f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
@@ -563,17 +601,18 @@ def main() -> None:
     config = args.config
 
     # Set up Bittensor logging FIRST with proper config (like template does)
+    # Debug logging is already enabled by default in _parse_args() if not explicitly disabled
     bt.logging.set_config(config=config.logging)
-    
+
     # Log the full config for reference (like template does)
     bt.logging.info(config)
-    
+
     bt.logging.info("Setting up bittensor objects.")
-    
+
     # Initialize wallet using config (ensures proper Bittensor integration)
     wallet = bt.wallet(config=config)
     bt.logging.info(f"Wallet: {wallet}")
-    
+
     # Initialize subtensor using config
     subtensor = bt.subtensor(config=config)
     bt.logging.info(f"Subtensor: {subtensor}")
@@ -581,7 +620,7 @@ def main() -> None:
     # Create and sync metagraph (like template does)
     metagraph = subtensor.metagraph(args.netuid)
     bt.logging.info(f"Metagraph: {metagraph}")
-    
+
     # Sync metagraph initially to get latest state
     metagraph.sync(subtensor=subtensor)
 
@@ -649,7 +688,7 @@ def main() -> None:
         while True:
             try:
                 current_block = subtensor.get_current_block()
-                
+
                 # Sync metagraph periodically
                 if current_block - last_metagraph_sync >= metagraph_sync_interval:
                     bt.logging.info(
@@ -657,9 +696,18 @@ def main() -> None:
                     )
                     metagraph.sync(subtensor=subtensor)
                     last_metagraph_sync = current_block
-                    network_name = config.subtensor.network if hasattr(config.subtensor, 'network') else subtensor.network
+                    network_name = (
+                        config.subtensor.network
+                        if hasattr(config.subtensor, "network")
+                        else subtensor.network
+                    )
                     # Convert block to scalar if it's an array
-                    block_val = int(metagraph.block) if hasattr(metagraph.block, '__iter__') and not isinstance(metagraph.block, str) else metagraph.block
+                    block_val = (
+                        int(metagraph.block)
+                        if hasattr(metagraph.block, "__iter__")
+                        and not isinstance(metagraph.block, str)
+                        else metagraph.block
+                    )
                     bt.logging.info(
                         f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Metagraph updated{ANSI_RESET} "
                         f"metagraph(netuid:{ANSI_BOLD}{args.netuid}{ANSI_RESET}, "
@@ -667,7 +715,7 @@ def main() -> None:
                         f"block:{ANSI_BOLD}{block_val}{ANSI_RESET}, "
                         f"network:{ANSI_BOLD}{network_name}{ANSI_RESET})"
                     )
-                
+
                 current_epoch_start = epoch_start()
                 current_epoch_version = current_epoch_start.strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
@@ -709,7 +757,7 @@ def main() -> None:
                     bt.logging.info(
                         f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}"
                     )
-                    
+
                     epoch_end_time = epoch_end(current_epoch_start)
                     now = datetime.now(timezone.utc)
                     time_until_next = (
