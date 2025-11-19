@@ -58,17 +58,20 @@ The validator operates on a weekly epoch cycle (Friday 00:00 UTC):
 The validator uses a sophisticated scoring system:
 
 - **Raw Score Calculation:**
-  ```
+
+  ```text
   raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
   ```
 
 - **Temperature Curve:**
-  ```
+
+  ```text
   score = 1 - exp(-raw / temperature)
   ```
 
 - **Normalized Weights:**
-  ```
+
+  ```text
   weight = score / sum(all_scores)
   ```
 
@@ -109,4 +112,4 @@ uv run mypy cartha_validator
 
 ---
 
-**Made with ❤ by GTV**
+Made with ❤ by GTV
