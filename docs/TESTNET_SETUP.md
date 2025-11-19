@@ -127,7 +127,7 @@ uv run python -m cartha_validator.main \
   --dry-run
 ```
 
-**Note**: In testnet demo mode, RPC endpoints may not be available or may use mock data. The `--use-verified-amounts` flag is recommended for testnet.
+**⚠️ Important**: In testnet demo mode, RPC endpoints are **not available**. You **must** use the `--use-verified-amounts` flag for testnet. Without this flag, the validator will attempt to connect to RPC endpoints (default: `localhost:8545`) and fail with connection errors.
 
 ### Production Mode (Publish Weights)
 
@@ -329,14 +329,15 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners"
 ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 ```
 
-### "RPC endpoint error"
+### "RPC endpoint error" or "Connection refused"
 
-**Problem**: Can't connect to RPC endpoints
+**Problem**: Validator can't connect to RPC endpoints (e.g., `Connection refused` to `localhost:8545`)
 
 **Solution**:
-- Use `--use-verified-amounts` flag to bypass RPC replay
-- In testnet demo mode, RPC errors are expected
-- Verify RPC URLs in config if using full replay
+- **For testnet**: You **must** use `--use-verified-amounts` flag. RPC endpoints are not available in testnet demo mode.
+- The validator will automatically show a helpful tip when RPC connection fails, suggesting to use `--use-verified-amounts`
+- For production/mainnet: Verify RPC URLs are configured correctly in `config.py` or via environment variables
+- Check that your RPC endpoint is running and accessible if you need full replay mode
 
 ### "No verified miners found"
 

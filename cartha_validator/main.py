@@ -327,8 +327,16 @@ def process_entries(
                     web3_cache[chain_id] = provider
             except Exception as exc:
                 bt.logging.error(
-                    "Failed to initialise Web3 provider for chain %s: %s", chain_id, exc
+                    f"Failed to initialise Web3 provider for chain {chain_id}: {exc}"
                 )
+                # If RPC is not available and we're not using verified amounts, suggest using the flag
+                if not use_verified_amounts and "Connection refused" in str(exc):
+                    bt.logging.warning(
+                        f"{ANSI_BOLD}{ANSI_YELLOW}💡 Tip:{ANSI_RESET} "
+                        f"RPC endpoint not available for chain {chain_id}. "
+                        f"Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} to bypass RPC replay "
+                        f"and use verifier-supplied amounts instead."
+                    )
                 metrics["failures"] += 1
                 miner_failed = True
                 continue
@@ -346,10 +354,7 @@ def process_entries(
                     )
                 except Exception as exc:  # pragma: no cover
                     bt.logging.error(
-                        "Unable to infer block for uid=%s chain=%s: %s",
-                        uid,
-                        chain_id,
-                        exc,
+                        f"Unable to infer block for uid={uid} chain={chain_id}: {exc}"
                     )
                     metrics["failures"] += 1
                     miner_failed = True
@@ -362,12 +367,15 @@ def process_entries(
                 )
             except Exception as exc:  # pragma: no cover
                 bt.logging.error(
-                    "Replay failed for uid=%s chain=%s owner=%s: %s",
-                    uid,
-                    chain_id,
-                    owner,
-                    exc,
+                    f"Replay failed for uid={uid} chain={chain_id} owner={owner}: {exc}"
                 )
+                # If RPC connection failed and we're not using verified amounts, suggest using the flag
+                if not use_verified_amounts and "Connection refused" in str(exc):
+                    bt.logging.warning(
+                        f"{ANSI_BOLD}{ANSI_YELLOW}💡 Tip:{ANSI_RESET} "
+                        f"RPC endpoint not available. "
+                        f"Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} to bypass RPC replay."
+                    )
                 metrics["failures"] += 1
                 miner_failed = True
                 continue
@@ -484,6 +492,36 @@ def run_epoch(
         f"for epoch {ANSI_BOLD}{ANSI_MAGENTA}{epoch_version}{ANSI_RESET} "
         f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
     )
+
+    # Check if we're in testnet mode and warn about RPC requirements
+    if not use_verified_amounts:
+        # Check if RPC URLs are configured for the chains we might encounter
+        # Common testnet chain ID is 31337
+        testnet_chain_id = 31337
+        if testnet_chain_id in settings.rpc_urls:
+            rpc_url = settings.rpc_urls[testnet_chain_id]
+            # Check if it's localhost (common testnet default that won't work)
+            if "localhost" in rpc_url or "127.0.0.1" in rpc_url:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  RPC Configuration Warning:{ANSI_RESET}\n"
+                    f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                    f"and have a localhost RPC configured ({rpc_url}).\n"
+                    f"  {ANSI_DIM}If you're on testnet, RPC endpoints are not available.{ANSI_RESET}\n"
+                    f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                    f"to bypass RPC replay and use verifier-supplied amounts.\n"
+                    f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
+                )
+        elif not settings.rpc_urls:
+            # No RPC URLs configured at all
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  No RPC Configuration:{ANSI_RESET}\n"
+                f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                f"but no RPC URLs are configured.\n"
+                f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                f"to bypass RPC replay, or configure RPC URLs in config.py.\n"
+                f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
+            )
+
     with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
         response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
         response.raise_for_status()
