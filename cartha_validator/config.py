@@ -12,7 +12,7 @@ class ValidatorSettings(BaseModel):
     """Typed configuration for validator components."""
 
     netuid: int = 35
-    verifier_url: HttpUrl | str = "http://localhost:8000"
+    verifier_url: HttpUrl | str = "https://cartha-verifier-826542474079.us-central1.run.app"
     rpc_urls: Mapping[int, str] = Field(default_factory=dict)
     pool_weights: Mapping[str, float] = Field(default_factory=dict)
     max_lock_days: int = 365

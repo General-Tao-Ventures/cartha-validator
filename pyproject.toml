@@ -22,10 +22,10 @@ dependencies = [
   "pytest>=8.2",
 ]
 
-[tool.uv]
-dev-dependencies = [
-  "ruff",
-  "mypy",
+[dependency-groups]
+dev = [
+    "ruff",
+    "mypy",
 ]
 
 [tool.pytest.ini_options]

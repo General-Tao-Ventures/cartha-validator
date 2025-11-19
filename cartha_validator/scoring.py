@@ -47,5 +47,7 @@ def score_entry(
 
     normalized = 1.0 - math.exp(-raw_total / temperature)
     normalized = max(0.0, min(normalized, 1.0))
-    bt.logging.debug(f"raw_total={raw_total} temperature={temperature} normalized_score={normalized}")
+    bt.logging.debug(
+        f"raw_total={raw_total} temperature={temperature} normalized_score={normalized}"
+    )
     return normalized

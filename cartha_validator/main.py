@@ -254,9 +254,7 @@ def process_entries(
             continue
 
         try:
-            uid = subtensor.get_uid_for_hotkey_on_subnet(
-                hotkey_ss58=hotkey, netuid=settings.netuid
-            )
+            uid = subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=hotkey, netuid=settings.netuid)
         except Exception as exc:  # pragma: no cover
             bt.logging.error(f"Failed to resolve UID for hotkey {hotkey}: {exc}")
             metrics["failures"] += 1
@@ -294,9 +292,7 @@ def process_entries(
                 pool_id = entry.get("pool_id") or entry.get("poolId") or "default"
                 amount = int(entry.get("amount", 0))
                 lock_days = settings.max_lock_days
-                existing = combined_positions.setdefault(
-                    pool_id, {"amount": 0, "lockDays": 0}
-                )
+                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
                 existing["amount"] += amount
                 existing["lockDays"] = max(existing["lockDays"], lock_days)
                 continue
@@ -326,9 +322,7 @@ def process_entries(
                     provider = Web3(Web3.HTTPProvider(rpc_url))
                     web3_cache[chain_id] = provider
             except Exception as exc:
-                bt.logging.error(
-                    f"Failed to initialise Web3 provider for chain {chain_id}: {exc}"
-                )
+                bt.logging.error(f"Failed to initialise Web3 provider for chain {chain_id}: {exc}")
                 # If RPC is not available and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
                     bt.logging.warning(
@@ -353,18 +347,14 @@ def process_entries(
                         at_block,
                     )
                 except Exception as exc:  # pragma: no cover
-                    bt.logging.error(
-                        f"Unable to infer block for uid={uid} chain={chain_id}: {exc}"
-                    )
+                    bt.logging.error(f"Unable to infer block for uid={uid} chain={chain_id}: {exc}")
                     metrics["failures"] += 1
                     miner_failed = True
                     continue
 
             replay_start = perf_counter()
             try:
-                positions = replay_fn(
-                    chain_id, vault, owner, int(at_block), web3=provider
-                )
+                positions = replay_fn(chain_id, vault, owner, int(at_block), web3=provider)
             except Exception as exc:  # pragma: no cover
                 bt.logging.error(
                     f"Replay failed for uid={uid} chain={chain_id} owner={owner}: {exc}"
@@ -385,20 +375,14 @@ def process_entries(
 
             try:
                 current_block = provider.eth.block_number
-                metrics["rpc_lag_blocks"].append(
-                    max(0, int(current_block) - int(at_block))
-                )
+                metrics["rpc_lag_blocks"].append(max(0, int(current_block) - int(at_block)))
             except Exception:  # pragma: no cover
                 bt.logging.debug("Failed to compute RPC lag for chain %s", chain_id)
 
             for pool_id, data in positions.items():
-                existing = combined_positions.setdefault(
-                    pool_id, {"amount": 0, "lockDays": 0}
-                )
+                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
                 existing["amount"] += int(data.get("amount", 0))
-                existing["lockDays"] = max(
-                    existing["lockDays"], int(data.get("lockDays", 0))
-                )
+                existing["lockDays"] = max(existing["lockDays"], int(data.get("lockDays", 0)))
 
         if not combined_positions:
             if miner_failed:
@@ -457,9 +441,7 @@ def process_entries(
         **metrics,
         "elapsed_ms": (perf_counter() - start_time) * 1000,
         "avg_replay_ms": mean(metrics["replay_ms"]) if metrics["replay_ms"] else 0.0,
-        "max_rpc_lag": (
-            max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0
-        ),
+        "max_rpc_lag": (max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0),
         "dry_run": dry_run,
     }
     return {
@@ -578,9 +560,7 @@ def run_epoch(
     )
 
     # Save detailed ranking to log file
-    log_dir_str = (
-        getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
-    )
+    log_dir_str = getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
     log_dir = Path(log_dir_str)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -643,9 +623,7 @@ def run_epoch(
         )
         # Show top 5 miners at info level, full list at debug level
         for i, item in enumerate(result["ranking"][:5], 1):
-            medal = (
-                f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
-            )
+            medal = f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
             bt.logging.info(
                 f"{medal}UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
                 f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
@@ -705,9 +683,7 @@ def main() -> None:
 
     # Detect network type for security enforcement
     network_name = (
-        config.subtensor.network
-        if hasattr(config.subtensor, "network")
-        else subtensor.network
+        config.subtensor.network if hasattr(config.subtensor, "network") else subtensor.network
     )
     is_mainnet = network_name == "finney" or args.netuid == 35
 
@@ -826,9 +802,7 @@ def main() -> None:
                     )
 
                 current_epoch_start = epoch_start()
-                current_epoch_version = current_epoch_start.strftime(
-                    "%Y-%m-%dT%H:%M:%SZ"
-                )
+                current_epoch_version = current_epoch_start.strftime("%Y-%m-%dT%H:%M:%SZ")
 
                 # Check if this is a new epoch
                 if last_processed_epoch != current_epoch_version:
@@ -836,9 +810,7 @@ def main() -> None:
                         f"{ANSI_BOLD}{ANSI_MAGENTA}{EMOJI_COIN} New epoch detected:{ANSI_RESET} "
                         f"{ANSI_BOLD}{current_epoch_version}{ANSI_RESET}"
                     )
-                    bt.logging.info(
-                        f"{ANSI_DIM}step({step}) block({current_block}){ANSI_RESET}"
-                    )
+                    bt.logging.info(f"{ANSI_DIM}step({step}) block({current_block}){ANSI_RESET}")
 
                     run_epoch(
                         verifier_url=args.verifier_url,
@@ -863,9 +835,7 @@ def main() -> None:
                     )
                 else:
                     # Same epoch, just wait and log heartbeat
-                    bt.logging.info(
-                        f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}"
-                    )
+                    bt.logging.info(f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}")
 
                     epoch_end_time = epoch_end(current_epoch_start)
                     now = datetime.now(timezone.utc)
