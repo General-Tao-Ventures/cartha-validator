@@ -1,106 +1,112 @@
-# Cartha Subnet Validator
+# Cartha Validator
 
-Validator reference implementation for Cartha SN35. It consumes the verifier’s epoch-frozen miner
-list, reconstructs each hotkey’s vault positions, scores liquidity, and publishes weights back to
-Bittensor.
+**The official validator implementation for Cartha subnet (SN35).** Score miners based on their USDC liquidity positions, compute weights, and publish them to the Bittensor network—all with built-in on-chain event replay and robust scoring algorithms.
+
+## Why Cartha Validator?
+
+Cartha Validator provides a complete, production-ready solution for running a validator on the Cartha subnet:
+
+- **📊 Intelligent Scoring** - Score miners based on locked USDC amounts, lock duration, and pool weights
+- **⛓️ On-Chain Validation** - Replay vault events from the blockchain to verify positions independently
+- **🔄 Epoch Management** - Automatic epoch detection and weight publishing at Friday 00:00 UTC
+- **🛡️ Security First** - Enforces on-chain validation on mainnet, preventing shortcuts that could compromise security
+- **📈 Production Ready** - Continuous daemon mode with configurable polling intervals and comprehensive logging
+
+## Quick Start
+
+```bash
+# Install dependencies
+uv sync
+
+# Run a dry-run to see computed weights
+uv run python -m cartha_validator.main \
+  --wallet-name cold \
+  --wallet-hotkey hot \
+  --netuid 35 \
+  --dry-run
+
+# Run in production mode (publishes weights)
+uv run python -m cartha_validator.main \
+  --wallet-name cold \
+  --wallet-hotkey hot \
+  --netuid 35
+```
 
 ## Requirements
 
 - Python 3.11
-- [`uv`](https://github.com/astral-sh/uv) for dependency + task management
-- Access to a Cartha verifier instance (local or remote)
-- Optional: access to the relevant EVM RPCs if you want full on-chain replay
+- [`uv`](https://github.com/astral-sh/uv) for dependency management
+- Bittensor wallet (coldkey and hotkey)
+- Access to Cartha verifier instance
+- EVM RPC endpoints for on-chain replay (required for mainnet)
 
-## Install & Test
+## How It Works
+
+The validator operates on a weekly epoch cycle (Friday 00:00 UTC):
+
+1. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier
+2. **Replay Positions** - For each miner, replays vault events from the blockchain to reconstruct their USDC positions
+3. **Score Liquidity** - Calculates scores based on:
+   - Locked USDC amounts (6 decimals)
+   - Lock duration (with Model-1 boost)
+   - Pool weights (configurable per pool)
+   - Temperature curve (default: 1000)
+4. **Normalize & Publish** - Normalizes scores to weights and publishes via `set_weights` to Bittensor
+
+## Scoring Algorithm
+
+The validator uses a sophisticated scoring system:
+
+- **Raw Score Calculation:**
+  ```
+  raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
+  ```
+
+- **Temperature Curve:**
+  ```
+  score = 1 - exp(-raw / temperature)
+  ```
+
+- **Normalized Weights:**
+  ```
+  weight = score / sum(all_scores)
+  ```
+
+This ensures fair distribution of rewards proportional to liquidity contribution while preventing any single miner from dominating.
+
+## Documentation
+
+- **[Command Reference](docs/COMMANDS.md)** - Complete documentation for all command-line arguments
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into validator internals and design
+- **[Testnet Setup](docs/TESTNET_SETUP.md)** - Step-by-step testnet deployment guide
+- **[Feedback & Support](docs/FEEDBACK.md)** - Get help and provide feedback
+
+## Security
+
+Cartha Validator enforces strict security policies:
+
+- **On-Chain Validation Required** - The `--use-verified-amounts` flag is **forbidden on mainnet** (netuid 35, network "finney") to ensure all positions are verified via blockchain replay
+- **Epoch Freezing** - Uses verifier's epoch-frozen snapshots to prevent manipulation
+- **Independent Verification** - Replays events directly from the blockchain, not relying solely on verifier data
+
+## Development
 
 ```bash
-uv sync              # install dependencies into .venv
-make test            # ruff lint + mypy + pytest
+# Run tests
+make test
+
+# Format code
+uv run ruff format
+
+# Type check
+uv run mypy cartha_validator
 ```
-
-## Repository Layout
-
-```text
-cartha_validator/    validator CLI, config, indexer, scoring and weight publisher
-abis/                vault ABI used during event replay
-tests/               unit tests covering replay, scoring, publishing
-docs/                architecture and operator notes
-```
-
-## Running Against a Local Verifier
-
-1. **Launch the verifier**
-
-   ```bash
-   cd ../cartha-verifier
-   cp ops/.env.example .env                 # adjust for SQLite or Postgres
-   uv sync
-   uv run python -m uvicorn cartha_verifier.app:APP --host 127.0.0.1 --port 8000
-   ```
-
-   Seed mock data if you want a local dry-run (e.g. using the snippet in `scripts/mock_scenarios.py`).
-
-2. **Dry-run the validator (no on-chain replay)**
-
-   ```bash
-   cd ../cartha-subnet-validator
-   source .venv/bin/activate
-   uv run python -m cartha_validator.main \
-     --verifier-url http://127.0.0.1:8000 \
-     --netuid 35 \
-     --dry-run \
-     --use-verified-amounts
-   ```
-
-   The command fetches the frozen miner list, derives scores using verifier-supplied amounts, and
-   prints the ranked vector instead of publishing it to the chain.
-
-3. **Full replay + publish (production)**
-   Configure the required RPC endpoints in `config.py` (or env) and drop the
-   `--use-verified-amounts` flag. Omit `--dry-run` to submit weights via `set_weights`.
-
-## Validator CLI Reference
-
-`uv run python -m cartha_validator.main [options]`
-
-| Flag | Description |
-| --- | --- |
-| `--verifier-url` | Base URL for the Cartha verifier (default from `config.py`). |
-| `--netuid` | Subnet UID to publish weights against. |
-| `--epoch` | Override epoch version (defaults to current Friday 00:00 UTC). |
-| `--timeout` | HTTP timeout (s) for verifier calls, default 15. |
-| `--dry-run` | Skip `set_weights`; pretty-print the computed vector. |
-| `--use-verified-amounts` | Development helper: bypass EVM replay and use the verifier's `amount` field directly. **⚠️ SECURITY: FORBIDDEN on mainnet (netuid 35, network "finney")** - The validator will refuse to run with this flag on mainnet to enforce on-chain validation. |
-
-All logging goes through `bittensor.logging`. Run with `--logging.debug` (Bittensor CLI flag) to see
-per-miner diagnostics (replay timing, RPC lag, scoring contributions, etc.).
-
-## Scoring & Weights
-
-- For each hotkey, positions are grouped by pool (`pool_id`).
-- Liquidity is converted from raw USDC (6 decimals) into tokens and multiplied by the Model‑1
-  lock boost:  
-  `raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays`
-- Raw totals run through the temperature curve (default 1000) to keep scores in `[0, 1]`:
-  `score = 1 - exp(-raw / temperature)`
-- Normalised weights are `score / sum(score)` and are submitted via `set_weights` with the current
-  `WeightsVersionKey`.
-
-## Testing & Tooling
-
-- `make test` → ruff, mypy, pytest
-- `uv run pytest -s tests/test_scoring.py::test_multi_wallet_ranking_outputs_json` → prints the
-  ranked JSON for inspection
-- Logging from both verifier and validator is human-readable and suitable for terminal dashboards.
-
-## Mining Note
-
-SN35 miners do **not** run a node from this repository. They register via `cartha-cli`, lock USDC,
-and submit a single LockProof to the verifier. Validators (this project) replay the vault events
-or consume the verifier snapshot to set weights. Refer miners to [`cartha-cli`](../cartha-cli) for
-onboarding instructions.
 
 ## Related Repositories
 
-- [`cartha-verifier`](../cartha-verifier) – API the validator consumes.
-- [`cartha-cli`](../cartha-cli) – Miner tooling that produces LockProofs.
+- **[cartha-verifier](../cartha-verifier)** - The API service that provides epoch-frozen miner lists
+- **[cartha-cli](../cartha-cli)** - Miner tooling for registration and lock proof submission
+
+---
+
+**Made with ❤ by GTV**

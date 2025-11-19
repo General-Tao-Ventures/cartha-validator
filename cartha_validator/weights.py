@@ -8,10 +8,20 @@ import bittensor as bt
 
 from .config import DEFAULT_SETTINGS, ValidatorSettings
 from .logging import (
-    ANSI_BOLD, ANSI_DIM, ANSI_GREEN, ANSI_YELLOW, ANSI_RED, ANSI_CYAN,
-    ANSI_RESET, ANSI_BRIGHT_GREEN,
-    EMOJI_SUCCESS, EMOJI_ERROR, EMOJI_WARNING, EMOJI_ROCKET, EMOJI_COIN,
-    EMOJI_STOPWATCH
+    ANSI_BOLD,
+    ANSI_DIM,
+    ANSI_GREEN,
+    ANSI_YELLOW,
+    ANSI_RED,
+    ANSI_CYAN,
+    ANSI_RESET,
+    ANSI_BRIGHT_GREEN,
+    EMOJI_SUCCESS,
+    EMOJI_ERROR,
+    EMOJI_WARNING,
+    EMOJI_ROCKET,
+    EMOJI_COIN,
+    EMOJI_STOPWATCH,
 )
 
 
@@ -81,14 +91,18 @@ def publish(
         bt.logging.debug(f"UID {uid}: score={score_val:.6f} -> normalized_weight={weight_val:.6f}")
     subtensor = subtensor or bt.subtensor()
     wallet = wallet or bt.wallet()
-    
+
     # Check if enough blocks have passed since last weight update (if metagraph available)
     if metagraph is not None and validator_uid is not None:
         current_block = subtensor.get_current_block()
-        last_update = metagraph.last_update[validator_uid] if hasattr(metagraph, 'last_update') and validator_uid < len(metagraph.last_update) else 0
+        last_update = (
+            metagraph.last_update[validator_uid]
+            if hasattr(metagraph, "last_update") and validator_uid < len(metagraph.last_update)
+            else 0
+        )
         blocks_since_update = current_block - last_update
-        epoch_length = getattr(settings, 'epoch_length_blocks', 100)  # Default epoch length
-        
+        epoch_length = getattr(settings, "epoch_length_blocks", 100)  # Default epoch length
+
         if blocks_since_update < epoch_length:
             bt.logging.info(
                 f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_STOPWATCH} Skipping set_weights:{ANSI_RESET} "
@@ -103,7 +117,7 @@ def publish(
     if version_key is None:
         version_key = _version_key(epoch_version)
         bt.logging.debug(f"Falling back to derived version_key={version_key}")
-    
+
     success, message = subtensor.set_weights(
         wallet=wallet,
         netuid=settings.netuid,
