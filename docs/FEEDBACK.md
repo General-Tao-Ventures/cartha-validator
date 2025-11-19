@@ -10,8 +10,8 @@ We value your feedback! There are several ways to share your thoughts:
 
 Join our official Discord channels for real-time feedback and discussions:
 
-- **Cartha Subnet Channel**: Share feedback in #cartha-sn35: https://discord.gg/X9YzEbRe
-- **Bittensor Channel**: Reach out directly to Cartha/0xMarkets team members: https://discord.com/channels/799672011265015819/1415790978077556906
+- **Cartha Subnet Channel**: Share feedback in #cartha-sn35: <https://discord.gg/X9YzEbRe>
+- **Bittensor Channel**: Reach out directly to Cartha/0xMarkets team members: <https://discord.com/channels/799672011265015819/1415790978077556906>
 
 ### 2. GitHub Issues
 
