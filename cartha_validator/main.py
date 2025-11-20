@@ -548,21 +548,52 @@ def run_epoch(
         entries = response.json()
 
         # Confirm epoch version: verify all entries match the requested epoch
+        # Note: Verifier may return a different epoch (last frozen) if current epoch is not frozen yet
+        # This is expected behavior and ensures validators only use frozen epoch data
+        actual_epoch_version = None
         if entries:
-            mismatched = [
-                entry
+            # Check if all entries have the same epoch_version
+            epoch_versions = {
+                entry.get("epoch_version")
                 for entry in entries
-                if entry.get("epoch_version") != epoch_version
-            ]
-            if mismatched:
+                if entry.get("epoch_version")
+            }
+            if len(epoch_versions) == 1:
+                actual_epoch_version = epoch_versions.pop()
+            elif len(epoch_versions) > 1:
+                # Multiple different epochs - this is unexpected
                 bt.logging.warning(
-                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Epoch version mismatch:{ANSI_RESET} "
-                    f"Requested {epoch_version}, but {len(mismatched)} entries have different epoch_version. "
-                    f"{ANSI_DIM}This may indicate a verifier issue.{ANSI_RESET}"
+                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Multiple epoch versions in response:{ANSI_RESET} "
+                    f"{epoch_versions}. {ANSI_DIM}This may indicate a verifier issue.{ANSI_RESET}"
                 )
-            else:
+                # Use the most common epoch version
+                from collections import Counter
+
+                epoch_counts = Counter(
+                    entry.get("epoch_version")
+                    for entry in entries
+                    if entry.get("epoch_version")
+                )
+                actual_epoch_version = epoch_counts.most_common(1)[0][0]
+
+            if actual_epoch_version and actual_epoch_version != epoch_version:
+                # Verifier returned a different epoch (likely last frozen epoch fallback)
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_INFO} Epoch fallback:{ANSI_RESET} "
+                    f"Requested {epoch_version} (not frozen yet), "
+                    f"verifier returned {actual_epoch_version} (last frozen epoch). "
+                    f"{ANSI_DIM}Using frozen epoch data for consistency.{ANSI_RESET}"
+                )
+                # Update epoch_version to match what was actually returned
+                epoch_version = actual_epoch_version
+            elif actual_epoch_version == epoch_version:
                 bt.logging.debug(
                     f"{ANSI_DIM}Epoch version confirmed: all {len(entries)} entries match {epoch_version}{ANSI_RESET}"
+                )
+            else:
+                # No entries or no epoch_version in entries
+                bt.logging.debug(
+                    f"{ANSI_DIM}No entries returned for epoch {epoch_version}{ANSI_RESET}"
                 )
 
     if subtensor is None:
@@ -583,6 +614,9 @@ def run_epoch(
         validator_uid=validator_uid,
         use_verified_amounts=use_verified_amounts,
     )
+
+    # Include the actual epoch version used (may differ from requested if fallback occurred)
+    result["epoch_version"] = epoch_version
 
     summary = result["summary"]
     bt.logging.info(
@@ -913,9 +947,14 @@ def main() -> None:
 
                     # Cache the weights and scores for this weekly epoch
                     # These will be reused throughout the week for every Bittensor epoch
+                    # Note: epoch_version may have been updated if verifier returned a fallback epoch
                     cached_weights = result.get("weights", {})
                     cached_scores = result.get("scores", {})
-                    cached_epoch_version = current_weekly_epoch_version
+                    # Use the actual epoch version returned by verifier (may be different if fallback occurred)
+                    cached_epoch_version = result.get(
+                        "epoch_version", current_weekly_epoch_version
+                    )
+                    # Track the weekly epoch we're in (not necessarily the frozen epoch version)
                     last_weekly_epoch_version = current_weekly_epoch_version
                     last_weight_publish_block = current_block
                     step += 1
