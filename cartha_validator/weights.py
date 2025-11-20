@@ -100,7 +100,8 @@ def publish(
             else 0
         )
         blocks_since_update = current_block - last_update
-        epoch_length = getattr(settings, "epoch_length_blocks", 100)  # Default epoch length
+        # Use tempo (Bittensor epoch length) from metagraph, fallback to default
+        epoch_length = getattr(metagraph, "tempo", None) or getattr(settings, "epoch_length_blocks", 360)  # Default to 360 (typical tempo)
 
         if blocks_since_update < epoch_length:
             bt.logging.info(

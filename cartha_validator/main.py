@@ -249,7 +249,9 @@ def process_entries(
             continue
 
         try:
-            uid = subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=hotkey, netuid=settings.netuid)
+            uid = subtensor.get_uid_for_hotkey_on_subnet(
+                hotkey_ss58=hotkey, netuid=settings.netuid
+            )
         except Exception as exc:  # pragma: no cover
             bt.logging.error(f"Failed to resolve UID for hotkey {hotkey}: {exc}")
             metrics["failures"] += 1
@@ -287,7 +289,9 @@ def process_entries(
                 pool_id = "default"  # No longer exposed, use default
                 amount = int(entry.get("amount", 0))
                 lock_days = int(entry.get("lock_days", 0))
-                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
+                existing = combined_positions.setdefault(
+                    pool_id, {"amount": 0, "lockDays": 0}
+                )
                 existing["amount"] += amount
                 existing["lockDays"] = max(existing["lockDays"], lock_days)
                 continue
@@ -319,7 +323,9 @@ def process_entries(
                     provider = Web3(Web3.HTTPProvider(rpc_url))
                     web3_cache[chain_id] = provider
             except Exception as exc:
-                bt.logging.error(f"Failed to initialise Web3 provider for chain {chain_id}: {exc}")
+                bt.logging.error(
+                    f"Failed to initialise Web3 provider for chain {chain_id}: {exc}"
+                )
                 # If RPC is not available and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
                     bt.logging.warning(
@@ -344,14 +350,18 @@ def process_entries(
                         at_block,
                     )
                 except Exception as exc:  # pragma: no cover
-                    bt.logging.error(f"Unable to infer block for uid={uid} chain={chain_id}: {exc}")
+                    bt.logging.error(
+                        f"Unable to infer block for uid={uid} chain={chain_id}: {exc}"
+                    )
                     metrics["failures"] += 1
                     miner_failed = True
                     continue
 
             replay_start = perf_counter()
             try:
-                positions = replay_fn(chain_id, vault, owner, int(at_block), web3=provider)
+                positions = replay_fn(
+                    chain_id, vault, owner, int(at_block), web3=provider
+                )
             except Exception as exc:  # pragma: no cover
                 bt.logging.error(
                     f"Replay failed for uid={uid} chain={chain_id} owner={owner}: {exc}"
@@ -372,14 +382,20 @@ def process_entries(
 
             try:
                 current_block = provider.eth.block_number
-                metrics["rpc_lag_blocks"].append(max(0, int(current_block) - int(at_block)))
+                metrics["rpc_lag_blocks"].append(
+                    max(0, int(current_block) - int(at_block))
+                )
             except Exception:  # pragma: no cover
                 bt.logging.debug("Failed to compute RPC lag for chain %s", chain_id)
 
             for pool_id, data in positions.items():
-                existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
+                existing = combined_positions.setdefault(
+                    pool_id, {"amount": 0, "lockDays": 0}
+                )
                 existing["amount"] += int(data.get("amount", 0))
-                existing["lockDays"] = max(existing["lockDays"], int(data.get("lockDays", 0)))
+                existing["lockDays"] = max(
+                    existing["lockDays"], int(data.get("lockDays", 0))
+                )
 
         if not combined_positions:
             if miner_failed:
@@ -438,7 +454,9 @@ def process_entries(
         **metrics,
         "elapsed_ms": (perf_counter() - start_time) * 1000,
         "avg_replay_ms": mean(metrics["replay_ms"]) if metrics["replay_ms"] else 0.0,
-        "max_rpc_lag": (max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0),
+        "max_rpc_lag": (
+            max(metrics["rpc_lag_blocks"]) if metrics["rpc_lag_blocks"] else 0
+        ),
         "dry_run": dry_run,
     }
     return {
@@ -529,6 +547,24 @@ def run_epoch(
         response.raise_for_status()
         entries = response.json()
 
+        # Confirm epoch version: verify all entries match the requested epoch
+        if entries:
+            mismatched = [
+                entry
+                for entry in entries
+                if entry.get("epoch_version") != epoch_version
+            ]
+            if mismatched:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Epoch version mismatch:{ANSI_RESET} "
+                    f"Requested {epoch_version}, but {len(mismatched)} entries have different epoch_version. "
+                    f"{ANSI_DIM}This may indicate a verifier issue.{ANSI_RESET}"
+                )
+            else:
+                bt.logging.debug(
+                    f"{ANSI_DIM}Epoch version confirmed: all {len(entries)} entries match {epoch_version}{ANSI_RESET}"
+                )
+
     if subtensor is None:
         subtensor = bt.subtensor()
     if wallet is None:
@@ -557,7 +593,9 @@ def run_epoch(
     )
 
     # Save detailed ranking to log file
-    log_dir_str = getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
+    log_dir_str = (
+        getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
+    )
     log_dir = Path(log_dir_str)
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -620,7 +658,9 @@ def run_epoch(
         )
         # Show top 5 miners at info level, full list at debug level
         for i, item in enumerate(result["ranking"][:5], 1):
-            medal = f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            medal = (
+                f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            )
             bt.logging.info(
                 f"{medal}UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
                 f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
@@ -680,7 +720,9 @@ def main() -> None:
 
     # Detect network type for security enforcement
     network_name = (
-        config.subtensor.network if hasattr(config.subtensor, "network") else subtensor.network
+        config.subtensor.network
+        if hasattr(config.subtensor, "network")
+        else subtensor.network
     )
     is_mainnet = network_name == "finney" or args.netuid == 35
 
@@ -756,15 +798,31 @@ def main() -> None:
             f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_ROCKET} Starting validator daemon{ANSI_RESET} "
             f"{ANSI_DIM}(polling every {args.poll_interval} seconds, use --run-once for single execution){ANSI_RESET}"
         )
-        last_processed_epoch = None
+        # Track weekly epoch (Friday 00:00 UTC → Thursday 23:59 UTC)
+        last_weekly_epoch_version = None
+        cached_weights: dict[int, float] | None = None
+        cached_scores: dict[int, float] | None = None
+        cached_epoch_version: str | None = None
+
         step = 0
         last_metagraph_sync = 0
         metagraph_sync_interval = 100  # Sync metagraph every 100 blocks
+        last_weight_publish_block = 0
 
         current_block = subtensor.get_current_block()
         bt.logging.info(
             f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_BLOCK} Validator starting{ANSI_RESET} "
             f"at block: {ANSI_BOLD}{current_block}{ANSI_RESET}"
+        )
+
+        # Get Bittensor epoch length (tempo) from metagraph
+        metagraph.sync(subtensor=subtensor)
+        bittensor_epoch_length = getattr(
+            metagraph, "tempo", 360
+        )  # Default to 360 if not available
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_GEAR} Bittensor epoch length (tempo):{ANSI_RESET} "
+            f"{ANSI_BOLD}{bittensor_epoch_length}{ANSI_RESET} blocks"
         )
 
         while True:
@@ -778,6 +836,14 @@ def main() -> None:
                     )
                     metagraph.sync(subtensor=subtensor)
                     last_metagraph_sync = current_block
+                    # Update tempo in case it changed
+                    new_tempo = getattr(metagraph, "tempo", bittensor_epoch_length)
+                    if new_tempo != bittensor_epoch_length:
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_YELLOW} Tempo changed:{ANSI_RESET} "
+                            f"{bittensor_epoch_length} → {new_tempo}"
+                        )
+                        bittensor_epoch_length = new_tempo
                     network_name = (
                         config.subtensor.network
                         if hasattr(config.subtensor, "network")
@@ -795,23 +861,45 @@ def main() -> None:
                         f"metagraph(netuid:{ANSI_BOLD}{args.netuid}{ANSI_RESET}, "
                         f"n:{ANSI_BOLD}{metagraph.n}{ANSI_RESET}, "
                         f"block:{ANSI_BOLD}{block_val}{ANSI_RESET}, "
+                        f"tempo:{ANSI_BOLD}{bittensor_epoch_length}{ANSI_RESET}, "
                         f"network:{ANSI_BOLD}{network_name}{ANSI_RESET})"
                     )
 
+                # Check current weekly epoch (Friday 00:00 UTC → Thursday 23:59 UTC)
                 current_epoch_start = epoch_start()
-                current_epoch_version = current_epoch_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+                current_weekly_epoch_version = current_epoch_start.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
 
-                # Check if this is a new epoch
-                if last_processed_epoch != current_epoch_version:
+                # Check if this is a new weekly epoch or a restart - fetch frozen list and calculate weights
+                if last_weekly_epoch_version != current_weekly_epoch_version:
+                    # This could be:
+                    # 1. A new weekly epoch (Friday 00:00 UTC)
+                    # 2. A validator restart during an ongoing weekly epoch
+                    # In both cases, we need to fetch the frozen list for the current weekly epoch
+                    if last_weekly_epoch_version is None:
+                        # Validator restart - fetch frozen list for current weekly epoch
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Validator restart detected{ANSI_RESET} "
+                            f"during weekly epoch {ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
+                            f"{ANSI_DIM}Fetching frozen epoch list...{ANSI_RESET}"
+                        )
+                    else:
+                        # New weekly epoch transition
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_MAGENTA}{EMOJI_COIN} New weekly epoch detected:{ANSI_RESET} "
+                            f"{ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET} "
+                            f"{ANSI_DIM}(previous: {last_weekly_epoch_version}){ANSI_RESET}"
+                        )
                     bt.logging.info(
-                        f"{ANSI_BOLD}{ANSI_MAGENTA}{EMOJI_COIN} New epoch detected:{ANSI_RESET} "
-                        f"{ANSI_BOLD}{current_epoch_version}{ANSI_RESET}"
+                        f"{ANSI_DIM}step({step}) block({current_block}){ANSI_RESET}"
                     )
-                    bt.logging.info(f"{ANSI_DIM}step({step}) block({current_block}){ANSI_RESET}")
 
-                    run_epoch(
+                    # Fetch frozen epoch list and calculate weights for this weekly epoch
+                    # This will also publish weights once (via run_epoch -> process_entries -> publish)
+                    result = run_epoch(
                         verifier_url=args.verifier_url,
-                        epoch_version=current_epoch_version,
+                        epoch_version=current_weekly_epoch_version,
                         settings=settings,
                         timeout=args.timeout,
                         dry_run=args.dry_run,
@@ -823,35 +911,94 @@ def main() -> None:
                         args=args,
                     )
 
-                    last_processed_epoch = current_epoch_version
+                    # Cache the weights and scores for this weekly epoch
+                    # These will be reused throughout the week for every Bittensor epoch
+                    cached_weights = result.get("weights", {})
+                    cached_scores = result.get("scores", {})
+                    cached_epoch_version = current_weekly_epoch_version
+                    last_weekly_epoch_version = current_weekly_epoch_version
+                    last_weight_publish_block = current_block
                     step += 1
                     bt.logging.info(
-                        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Processed epoch{ANSI_RESET} "
-                        f"{ANSI_BOLD}{current_epoch_version}{ANSI_RESET}. "
-                        f"{ANSI_DIM}Next check in {args.poll_interval} seconds...{ANSI_RESET}"
+                        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weekly epoch weights calculated and cached{ANSI_RESET} "
+                        f"{ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
+                        f"{ANSI_DIM}Will publish these weights every Bittensor epoch (~{bittensor_epoch_length} blocks) throughout the week.{ANSI_RESET}"
                     )
                 else:
-                    # Same epoch, just wait and log heartbeat
-                    bt.logging.info(f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}")
+                    # Same weekly epoch - check if we need to publish cached weights for this Bittensor epoch
+                    if (
+                        cached_weights is not None
+                        and cached_scores is not None
+                        and cached_epoch_version is not None
+                    ):
+                        # Check if enough blocks have passed since last weight update (Bittensor epoch)
+                        should_publish = False
+                        blocks_since_update = 0
 
-                    epoch_end_time = epoch_end(current_epoch_start)
-                    now = datetime.now(UTC)
-                    time_until_next = (
-                        epoch_end_time - now
-                    ).total_seconds() + 60  # 1 minute after epoch ends
+                        if metagraph is not None and validator_uid is not None:
+                            last_update = (
+                                metagraph.last_update[validator_uid]
+                                if hasattr(metagraph, "last_update")
+                                and validator_uid < len(metagraph.last_update)
+                                else 0
+                            )
+                            blocks_since_update = current_block - last_update
 
-                    if time_until_next > 0:
-                        wait_time = min(time_until_next, args.poll_interval)
-                        bt.logging.debug(
-                            f"Current epoch: {current_epoch_version} (ends {epoch_end_time}). Waiting {wait_time} seconds until next check..."
-                        )
-                        time.sleep(wait_time)
+                            # Publish weights if Bittensor epoch has passed (tempo blocks)
+                            if blocks_since_update >= bittensor_epoch_length:
+                                should_publish = True
+                        else:
+                            # Fallback: check blocks since last publish
+                            blocks_since_last_publish = (
+                                current_block - last_weight_publish_block
+                            )
+                            if blocks_since_last_publish >= bittensor_epoch_length:
+                                should_publish = True
+                                blocks_since_update = blocks_since_last_publish
+
+                        if should_publish:
+                            bt.logging.info(
+                                f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Publishing cached weights{ANSI_RESET} "
+                                f"for weekly epoch {ANSI_BOLD}{cached_epoch_version}{ANSI_RESET} "
+                                f"{ANSI_DIM}(Bittensor epoch: {blocks_since_update}/{bittensor_epoch_length} blocks){ANSI_RESET}"
+                            )
+
+                            # Publish the cached weights (same weights throughout the week)
+                            published_weights = publish(
+                                cached_scores,
+                                epoch_version=cached_epoch_version,
+                                settings=settings,
+                                subtensor=subtensor,
+                                wallet=wallet,
+                                metagraph=metagraph,
+                                validator_uid=validator_uid,
+                            )
+
+                            if published_weights:
+                                last_weight_publish_block = current_block
+                                bt.logging.info(
+                                    f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Cached weights published{ANSI_RESET} "
+                                    f"{ANSI_DIM}({len(published_weights)} miners, weekly epoch {cached_epoch_version}){ANSI_RESET}"
+                                )
+                        else:
+                            bt.logging.debug(
+                                f"{ANSI_DIM}Waiting for Bittensor epoch: {blocks_since_update}/{bittensor_epoch_length} blocks "
+                                f"(weekly epoch: {cached_epoch_version}){ANSI_RESET}"
+                            )
                     else:
-                        # Should be a new epoch by now, but check in a short interval
-                        bt.logging.debug(
-                            f"Epoch should have ended, checking again in {args.poll_interval} seconds..."
+                        # No cached weights yet - this shouldn't happen but log it
+                        bt.logging.warning(
+                            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No cached weights available{ANSI_RESET} "
+                            f"for weekly epoch {current_weekly_epoch_version}. "
+                            f"{ANSI_DIM}Will fetch on next check.{ANSI_RESET}"
                         )
-                        time.sleep(args.poll_interval)
+
+                    # Wait before next check
+                    bt.logging.debug(
+                        f"{ANSI_DIM}Validator running... weekly epoch: {current_weekly_epoch_version}, "
+                        f"block: {current_block}{ANSI_RESET}"
+                    )
+                    time.sleep(args.poll_interval)
 
             except KeyboardInterrupt:
                 bt.logging.info(
