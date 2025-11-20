@@ -24,8 +24,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "ruff",
-    "mypy",
+  "ruff",
+  "mypy",
 ]
 
 [tool.pytest.ini_options]
