@@ -289,14 +289,16 @@ def process_entries(
 
         for entry in miner_entries:
             if use_verified_amounts:
-                pool_id = entry.get("pool_id") or entry.get("poolId") or "default"
+                pool_id = "default"  # No longer exposed, use default
                 amount = int(entry.get("amount", 0))
-                lock_days = settings.max_lock_days
+                lock_days = int(entry.get("lock_days", 0))
                 existing = combined_positions.setdefault(pool_id, {"amount": 0, "lockDays": 0})
                 existing["amount"] += amount
                 existing["lockDays"] = max(existing["lockDays"], lock_days)
                 continue
 
+            # Note: chain_id, vault, and owner are no longer exposed in API
+            # Validators must use --use-verified-amounts or have their own data source
             chain_id = entry.get("chainId") or entry.get("chain_id")
             vault = entry.get("vault")
             owner = _resolve_owner(entry)
