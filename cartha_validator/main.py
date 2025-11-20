@@ -253,7 +253,16 @@ def process_entries(
                 hotkey_ss58=hotkey, netuid=settings.netuid
             )
         except Exception as exc:  # pragma: no cover
-            bt.logging.error(f"Failed to resolve UID for hotkey {hotkey}: {exc}")
+            import traceback
+            bt.logging.error(
+                f"{ANSI_BOLD}{ANSI_RED}[UID RESOLUTION ERROR]{ANSI_RESET} "
+                f"Failed to resolve UID for hotkey"
+            )
+            bt.logging.error(f"Error type: {type(exc).__name__}")
+            bt.logging.error(f"Error message: {str(exc)}")
+            bt.logging.error(f"Hotkey: {hotkey}")
+            bt.logging.error(f"Netuid: {settings.netuid}")
+            bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
             metrics["failures"] += 1
             continue
 
@@ -323,9 +332,16 @@ def process_entries(
                     provider = Web3(Web3.HTTPProvider(rpc_url))
                     web3_cache[chain_id] = provider
             except Exception as exc:
+                import traceback
                 bt.logging.error(
-                    f"Failed to initialise Web3 provider for chain {chain_id}: {exc}"
+                    f"{ANSI_BOLD}{ANSI_RED}[RPC INIT ERROR]{ANSI_RESET} "
+                    f"Failed to initialise Web3 provider for chain {chain_id}"
                 )
+                bt.logging.error(f"Error type: {type(exc).__name__}")
+                bt.logging.error(f"Error message: {str(exc)}")
+                bt.logging.error(f"UID: {uid}, Chain: {chain_id}, Vault: {vault}")
+                bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                 # If RPC is not available and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
                     bt.logging.warning(
@@ -350,9 +366,16 @@ def process_entries(
                         at_block,
                     )
                 except Exception as exc:  # pragma: no cover
+                    import traceback
                     bt.logging.error(
-                        f"Unable to infer block for uid={uid} chain={chain_id}: {exc}"
+                        f"{ANSI_BOLD}{ANSI_RED}[BLOCK INFERENCE ERROR]{ANSI_RESET} "
+                        f"Unable to infer block for uid={uid}"
                     )
+                    bt.logging.error(f"Error type: {type(exc).__name__}")
+                    bt.logging.error(f"Error message: {str(exc)}")
+                    bt.logging.error(f"Chain: {chain_id}, Vault: {vault}")
+                    bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                    bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                     metrics["failures"] += 1
                     miner_failed = True
                     continue
@@ -363,9 +386,16 @@ def process_entries(
                     chain_id, vault, owner, int(at_block), web3=provider
                 )
             except Exception as exc:  # pragma: no cover
+                import traceback
                 bt.logging.error(
-                    f"Replay failed for uid={uid} chain={chain_id} owner={owner}: {exc}"
+                    f"{ANSI_BOLD}{ANSI_RED}[REPLAY ERROR]{ANSI_RESET} "
+                    f"Replay failed for uid={uid}"
                 )
+                bt.logging.error(f"Error type: {type(exc).__name__}")
+                bt.logging.error(f"Error message: {str(exc)}")
+                bt.logging.error(f"Chain: {chain_id}, Vault: {vault}, Owner: {owner}, Block: {at_block}")
+                bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                 # If RPC connection failed and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
                     bt.logging.warning(
@@ -542,10 +572,42 @@ def run_epoch(
                 f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
             )
 
-    with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
-        response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
-        response.raise_for_status()
-        entries = response.json()
+    try:
+        with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
+            bt.logging.debug(
+                f"{ANSI_DIM}Fetching verified miners from {verifier_url}/v1/verified-miners?epoch={epoch_version}{ANSI_RESET}"
+            )
+            response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
+            response.raise_for_status()
+            entries = response.json()
+    except httpx.HTTPStatusError as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER HTTP ERROR]{ANSI_RESET} "
+            f"Verifier returned error status: {exc.response.status_code}"
+        )
+        bt.logging.error(f"URL: {exc.request.url}")
+        bt.logging.error(f"Response: {exc.response.text[:500] if exc.response.text else 'No response body'}")
+        raise RuntimeError(
+            f"Verifier HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER REQUEST ERROR]{ANSI_RESET} "
+            f"Failed to connect to verifier: {exc}"
+        )
+        bt.logging.error(f"URL: {verifier_url}/v1/verified-miners")
+        bt.logging.error(f"Error type: {type(exc).__name__}")
+        raise RuntimeError(f"Failed to connect to verifier at {verifier_url}: {exc}") from exc
+    except Exception as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER ERROR]{ANSI_RESET} "
+            f"Unexpected error fetching verified miners: {exc}"
+        )
+        bt.logging.error(f"Error type: {type(exc).__name__}")
+        bt.logging.error(f"URL: {verifier_url}/v1/verified-miners?epoch={epoch_version}")
+        import traceback
+        bt.logging.error(f"Traceback:\n{traceback.format_exc()}")
+        raise
 
         # Confirm epoch version: verify all entries match the requested epoch
         # Note: Verifier may return a different epoch (last frozen) if current epoch is not frozen yet
@@ -1046,7 +1108,17 @@ def main() -> None:
                 )
                 break
             except Exception as exc:
-                bt.logging.error(f"Error in validator loop: {exc}", exc_info=True)
+                import traceback
+                bt.logging.error(
+                    f"{ANSI_BOLD}{ANSI_RED}[VALIDATOR LOOP ERROR]{ANSI_RESET} "
+                    f"Unexpected error in validator main loop"
+                )
+                bt.logging.error(f"Error type: {type(exc).__name__}")
+                bt.logging.error(f"Error message: {str(exc)}")
+                bt.logging.error(f"Current block: {current_block if 'current_block' in locals() else 'N/A'}")
+                bt.logging.error(f"Weekly epoch: {current_weekly_epoch_version if 'current_weekly_epoch_version' in locals() else 'N/A'}")
+                bt.logging.error(f"Cached epoch: {cached_epoch_version if 'cached_epoch_version' in locals() else 'N/A'}")
+                bt.logging.error(f"Traceback:\n{traceback.format_exc()}")
                 bt.logging.info(f"Retrying in {args.poll_interval} seconds...")
                 time.sleep(args.poll_interval)
 
