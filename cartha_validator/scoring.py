@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Mapping
-
 import math
+from collections.abc import Mapping
 
 import bittensor as bt
 

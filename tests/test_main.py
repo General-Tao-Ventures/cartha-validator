@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -81,7 +81,7 @@ def test_process_entries_dry_run(monkeypatch):
 
 
 def test_process_entries_publishes(monkeypatch):
-    published: Dict[int, float] = {}
+    published: dict[int, float] = {}
 
     def publish_stub(scores, epoch_version, settings, subtensor=None, wallet=None, metagraph=None, validator_uid=None):
         assert epoch_version == "2024-11-08T00:00:00Z"

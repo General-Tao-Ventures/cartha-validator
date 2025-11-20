@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any
-
 import json
 import math
-
-import pytest
+from typing import Any
 
 import bittensor as bt
+import pytest
 
 from cartha_validator.config import DEFAULT_SETTINGS
 from cartha_validator.scoring import score_entry

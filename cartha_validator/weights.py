@@ -2,26 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import bittensor as bt
 
 from .config import DEFAULT_SETTINGS, ValidatorSettings
 from .logging import (
     ANSI_BOLD,
+    ANSI_CYAN,
     ANSI_DIM,
     ANSI_GREEN,
-    ANSI_YELLOW,
     ANSI_RED,
-    ANSI_CYAN,
     ANSI_RESET,
-    ANSI_BRIGHT_GREEN,
-    EMOJI_SUCCESS,
+    ANSI_YELLOW,
     EMOJI_ERROR,
-    EMOJI_WARNING,
     EMOJI_ROCKET,
-    EMOJI_COIN,
     EMOJI_STOPWATCH,
+    EMOJI_SUCCESS,
+    EMOJI_WARNING,
 )
 
 

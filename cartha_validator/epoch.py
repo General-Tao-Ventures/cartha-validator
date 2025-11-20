@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bittensor as bt
 
@@ -11,7 +11,7 @@ EPOCH_LENGTH = timedelta(days=7)
 
 def epoch_start(reference: datetime | None = None) -> datetime:
     """Return the start (Friday 00:00 UTC) of the epoch that contains reference."""
-    reference = reference or datetime.now(tz=timezone.utc)
+    reference = reference or datetime.now(tz=UTC)
     weekday = reference.weekday()  # Monday=0
     days_since_friday = (weekday - 4) % 7
     start = datetime(
@@ -20,7 +20,7 @@ def epoch_start(reference: datetime | None = None) -> datetime:
         day=reference.day,
         hour=0,
         minute=0,
-        tzinfo=timezone.utc,
+        tzinfo=UTC,
     ) - timedelta(days=days_since_friday)
     bt.logging.debug(f"Computed epoch start {start} from reference {reference}")
     return start

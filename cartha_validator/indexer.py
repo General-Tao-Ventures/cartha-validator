@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List
-
-from hexbytes import HexBytes
-from web3 import Web3
+from typing import Any
 
 import bittensor as bt
+from hexbytes import HexBytes
+from web3 import Web3
 
 from .config import DEFAULT_SETTINGS
 
@@ -17,7 +16,7 @@ _ABI_PATH = Path(__file__).resolve().parents[1] / "abis" / "vault.json"
 try:
     _VAULT_ABI = json.loads(_ABI_PATH.read_text()).get("abi", [])
 except FileNotFoundError:  # pragma: no cover
-    _VAULT_ABI: List[Dict[str, Any]] = []
+    _VAULT_ABI: list[dict[str, Any]] = []
 
 
 def lock_id(owner: str, pool_id: bytes) -> HexBytes:
@@ -49,9 +48,9 @@ def _gather_events(
     contract: Any,
     lock: HexBytes,
     at_block: int,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Collect all events for a given lock id up to a target block."""
-    events: List[Dict[str, Any]] = []
+    events: list[dict[str, Any]] = []
     lock_filter = {"lockId": HexBytes(lock)}
     events.extend(
         contract.events.LockCreated().get_logs(
@@ -84,7 +83,7 @@ def replay_owner(
     owner: str,
     at_block: int,
     web3: Web3 | None = None,
-) -> Dict[str, Dict[str, int]]:
+) -> dict[str, dict[str, int]]:
     """Replay vault events for the owner and return Model-1 positions."""
     bt.logging.info(
         "Replaying events for owner=%s vault=%s chain=%s block=%s",
@@ -111,20 +110,20 @@ def replay_owner(
         bt.logging.debug("No LockCreated events found for owner %s", owner_checksum)
         return {}
 
-    locks: Dict[HexBytes, Dict[str, Any]] = {}
+    locks: dict[HexBytes, dict[str, Any]] = {}
     for created in created_logs:
         lock = HexBytes(created["args"]["lockId"])
         pool_key = _decode_pool_id(created["args"]["poolId"])
         locks.setdefault(lock, {"pool": pool_key, "events": []})["events"].append(created)
 
-    results: Dict[str, Dict[str, int]] = {}
+    results: dict[str, dict[str, int]] = {}
     for lock, info in locks.items():
         events = info["events"]
         events.extend(_gather_events(contract, lock, at_block))
 
         # Deduplicate events that might have been added twice (e.g., LockCreated)
         seen = set()
-        unique_events: List[Dict[str, Any]] = []
+        unique_events: list[dict[str, Any]] = []
         for ev in events:
             key = (ev["event"], ev["blockNumber"], ev["logIndex"])
             if key not in seen:

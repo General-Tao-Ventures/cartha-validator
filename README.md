@@ -91,7 +91,7 @@ Cartha Validator enforces strict security policies:
 
 ## Development
 
-```bash
+   ```bash
 # Run tests
 make test
 

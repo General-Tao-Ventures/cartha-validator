@@ -4,47 +4,42 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable, Iterable, Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import mean
 from time import perf_counter
-from typing import Any, Callable, Dict, Iterable, List, Mapping
+from typing import Any
 
+import bittensor as bt
 import httpx
 from web3 import Web3
 
-import bittensor as bt
-
 from .config import DEFAULT_SETTINGS, ValidatorSettings
-from .epoch import epoch_start, epoch_end
+from .epoch import epoch_end, epoch_start
 from .indexer import replay_owner
 from .logging import (
     ANSI_BOLD,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_GREEN,
+    ANSI_CYAN,
     ANSI_DIM,
     ANSI_GREEN,
-    ANSI_YELLOW,
-    ANSI_RED,
-    ANSI_CYAN,
     ANSI_MAGENTA,
+    ANSI_RED,
     ANSI_RESET,
-    ANSI_BRIGHT_GREEN,
-    ANSI_BRIGHT_YELLOW,
-    ANSI_BRIGHT_CYAN,
-    EMOJI_SUCCESS,
-    EMOJI_ERROR,
-    EMOJI_WARNING,
-    EMOJI_INFO,
-    EMOJI_ROCKET,
+    ANSI_YELLOW,
+    EMOJI_BLOCK,
     EMOJI_CHART,
-    EMOJI_TROPHY,
     EMOJI_COIN,
     EMOJI_GEAR,
-    EMOJI_STOPWATCH,
-    EMOJI_BLOCK,
     EMOJI_NETWORK,
+    EMOJI_ROCKET,
+    EMOJI_SUCCESS,
+    EMOJI_TROPHY,
+    EMOJI_WARNING,
 )
 from .scoring import score_entry
 from .weights import _normalize, publish
@@ -196,8 +191,8 @@ def _resolve_block(entry: Mapping[str, Any]) -> int | None:
 
 def _format_positions(
     positions: Mapping[str, Mapping[str, int]], unit: float
-) -> Dict[str, Dict[str, Any]]:
-    formatted: Dict[str, Dict[str, Any]] = {}
+) -> dict[str, dict[str, Any]]:
+    formatted: dict[str, dict[str, Any]] = {}
     for pool_id, data in positions.items():
         amount_raw = int(data.get("amount", 0))
         amount_usdc = amount_raw / unit
@@ -222,11 +217,11 @@ def process_entries(
     metagraph: Any | None = None,
     validator_uid: int | None = None,
     use_verified_amounts: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Replay events, score miners, and optionally publish weights."""
     start_time = perf_counter()
-    scores: Dict[int, float] = {}
-    details: List[Dict[str, Any]] = []
+    scores: dict[int, float] = {}
+    details: list[dict[str, Any]] = []
     metrics = {
         "total_rows": 0,
         "total_miners": 0,
@@ -239,11 +234,11 @@ def process_entries(
         "rpc_lag_blocks": [],
     }
     unit = float(10**settings.token_decimals)
-    web3_cache: Dict[int, Web3] = {}
+    web3_cache: dict[int, Web3] = {}
     subtensor = subtensor or bt.subtensor()
 
-    grouped: Dict[int, Dict[str, Any]] = {}
-    sources: Dict[int, List[Mapping[str, Any]]] = {}
+    grouped: dict[int, dict[str, Any]] = {}
+    sources: dict[int, list[Mapping[str, Any]]] = {}
 
     for entry in entries:
         metrics["total_rows"] += 1
@@ -283,8 +278,8 @@ def process_entries(
     metrics["total_miners"] = len(grouped)
 
     for uid, miner_entries in sources.items():
-        combined_positions: Dict[str, Dict[str, int]] = {}
-        per_miner_replay: List[float] = []
+        combined_positions: dict[str, dict[str, int]] = {}
+        per_miner_replay: list[float] = []
         miner_failed = False
 
         for entry in miner_entries:
@@ -407,7 +402,7 @@ def process_entries(
             }
         )
 
-    weights: Dict[int, float]
+    weights: dict[int, float]
     if scores:
         if dry_run:
             weights = dict(_normalize(scores))
@@ -470,7 +465,7 @@ def run_epoch(
     metagraph: Any | None = None,
     validator_uid: int | None = None,
     args: Any | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     bt.logging.info(
         f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Starting validator run{ANSI_RESET} "
         f"for epoch {ANSI_BOLD}{ANSI_MAGENTA}{epoch_version}{ANSI_RESET} "
@@ -566,7 +561,7 @@ def run_epoch(
     log_dir = Path(log_dir_str)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     log_file = (
         log_dir
         / f"weights_{epoch_version.replace(':', '-').replace('T', '_').replace('Z', '')}_{timestamp}.json"
@@ -586,7 +581,7 @@ def run_epoch(
 
     log_entry = {
         "epoch_version": epoch_version,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "dry_run": dry_run,
         "summary": summary,
         "ranking": ranking_payload,
@@ -840,7 +835,7 @@ def main() -> None:
                     bt.logging.info(f"{ANSI_DIM}Validator running... {time.time()}{ANSI_RESET}")
 
                     epoch_end_time = epoch_end(current_epoch_start)
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     time_until_next = (
                         epoch_end_time - now
                     ).total_seconds() + 60  # 1 minute after epoch ends
