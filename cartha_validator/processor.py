@@ -26,6 +26,7 @@ PublishFn = Callable[
         Any | None,
         Any | None,
         int | None,
+        bool,
     ],
     dict[int, float],
 ]
@@ -76,6 +77,7 @@ def process_entries(
     metagraph: Any | None = None,
     validator_uid: int | None = None,
     use_verified_amounts: bool = False,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Replay events, score miners, and optionally publish weights."""
     start_time = perf_counter()
@@ -324,6 +326,7 @@ def process_entries(
                     wallet=wallet,
                     metagraph=metagraph,
                     validator_uid=validator_uid,
+                    force=force,
                 )
             )
     else:

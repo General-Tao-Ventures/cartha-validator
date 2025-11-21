@@ -144,7 +144,7 @@ def main() -> None:
     )
 
     if args.run_once:
-        # Single run mode
+        # Single run mode - always force weights on startup
         epoch_version = _epoch_version(args.epoch)
         run_epoch(
             verifier_url=args.verifier_url,
@@ -158,6 +158,7 @@ def main() -> None:
             metagraph=metagraph,
             validator_uid=validator_uid,
             args=args,
+            force=True,  # Always force weights in single-run mode
         )
     else:
         # Continuous daemon mode
@@ -264,6 +265,9 @@ def main() -> None:
 
                     # Fetch frozen epoch list and calculate weights for this weekly epoch
                     # This will also publish weights once (via run_epoch -> process_entries -> publish)
+                    # Force weights on startup (when last_weekly_epoch_version is None) to ensure
+                    # validator always sets weights when it starts, bypassing cooldown checks
+                    is_startup = last_weekly_epoch_version is None
                     result = run_epoch(
                         verifier_url=args.verifier_url,
                         epoch_version=current_weekly_epoch_version,
@@ -276,6 +280,7 @@ def main() -> None:
                         metagraph=metagraph,
                         validator_uid=validator_uid,
                         args=args,
+                        force=is_startup,
                     )
 
                     # Cache the weights and scores for this weekly epoch

@@ -54,6 +54,7 @@ def run_epoch(
     metagraph: Any | None = None,
     validator_uid: int | None = None,
     args: Any | None = None,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Run a single epoch: fetch entries, process, score, and publish weights.
 
@@ -71,6 +72,7 @@ def run_epoch(
         metagraph: Bittensor metagraph instance (optional)
         validator_uid: Validator UID (optional)
         args: Command-line arguments (for log_dir)
+        force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
 
     Returns:
         Dictionary with scores, weights, ranking, and summary
@@ -234,6 +236,7 @@ def run_epoch(
         metagraph=metagraph,
         validator_uid=validator_uid,
         use_verified_amounts=use_verified_amounts,
+        force=force,
     )
 
     # Include the actual epoch version used (may differ from requested if fallback occurred)

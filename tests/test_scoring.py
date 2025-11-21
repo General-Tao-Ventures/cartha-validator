@@ -119,6 +119,7 @@ def test_publish_raises_on_failure() -> None:
             {0: 1.0},
             epoch_version="2024-10-18T00:00:00Z",
             subtensor=FailingSubtensor(),
+            force=False,
         )
 
 def test_publish_falls_back_to_hash_when_query_fails() -> None:
@@ -136,6 +137,7 @@ def test_publish_falls_back_to_hash_when_query_fails() -> None:
         settings=settings,
         subtensor=subtensor,
         wallet=wallet,
+        force=False,
     )
     assert weights[0] == 1.0
     call = subtensor.calls[0]
@@ -194,6 +196,7 @@ def test_multi_wallet_ranking_outputs_json(capfd) -> None:
         settings=settings,
         subtensor=subtensor,
         wallet=wallet,
+        force=False,
     )
 
     expected_weights = _normalize(expected_scores)

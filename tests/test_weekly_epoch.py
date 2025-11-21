@@ -195,6 +195,7 @@ def test_cached_weights_published_multiple_times():
         wallet=MockWallet(),
         metagraph=metagraph,
         validator_uid=0,
+        force=False,
     )
 
     # Should skip because not enough blocks
@@ -212,6 +213,7 @@ def test_cached_weights_published_multiple_times():
         wallet=MockWallet(),
         metagraph=metagraph,
         validator_uid=0,
+        force=False,
     )
 
     # Should have published
@@ -229,6 +231,7 @@ def test_cached_weights_published_multiple_times():
         wallet=MockWallet(),
         metagraph=metagraph,
         validator_uid=0,
+        force=False,
     )
 
     # Should publish again with same cached weights
@@ -372,6 +375,7 @@ def test_weights_use_tempo_from_metagraph(monkeypatch):
         wallet=wallet,
         metagraph=metagraph,
         validator_uid=0,
+        force=False,
     )
 
     assert result is not None
@@ -389,6 +393,7 @@ def test_weights_use_tempo_from_metagraph(monkeypatch):
         wallet=wallet,
         metagraph=metagraph2,
         validator_uid=0,
+        force=False,
     )
 
     # Should return weights but may skip actual publishing

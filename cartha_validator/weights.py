@@ -65,8 +65,20 @@ def publish(
     wallet: Any | None = None,
     metagraph: Any | None = None,
     validator_uid: int | None = None,
+    force: bool = False,
 ) -> dict[int, float]:
-    """Normalize scores and publish weights to the subnet."""
+    """Normalize scores and publish weights to the subnet.
+    
+    Args:
+        scores: Mapping of UID to score
+        epoch_version: Epoch version identifier
+        settings: Validator settings
+        subtensor: Bittensor subtensor instance
+        wallet: Bittensor wallet instance
+        metagraph: Bittensor metagraph instance
+        validator_uid: Validator UID
+        force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
+    """
     if not scores:
         bt.logging.warning(
             f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No scores to publish;{ANSI_RESET} "
@@ -92,7 +104,8 @@ def publish(
     wallet = wallet or bt.wallet()
 
     # Check if enough blocks have passed since last weight update (if metagraph available)
-    if metagraph is not None and validator_uid is not None:
+    # Skip this check if force=True (e.g., on validator startup)
+    if not force and metagraph is not None and validator_uid is not None:
         current_block = subtensor.get_current_block()
         last_update = (
             metagraph.last_update[validator_uid]
