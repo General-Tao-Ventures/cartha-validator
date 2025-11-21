@@ -1,0 +1,328 @@
+"""Epoch running logic for the validator."""
+
+from __future__ import annotations
+
+import json
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import bittensor as bt
+import httpx
+
+from .config import ValidatorSettings
+from .indexer import replay_owner
+from .logging import (
+    ANSI_BOLD,
+    ANSI_BRIGHT_CYAN,
+    ANSI_BRIGHT_GREEN,
+    ANSI_CYAN,
+    ANSI_DIM,
+    ANSI_GREEN,
+    ANSI_MAGENTA,
+    ANSI_RED,
+    ANSI_RESET,
+    ANSI_YELLOW,
+    EMOJI_BLOCK,
+    EMOJI_CHART,
+    EMOJI_INFO,
+    EMOJI_ROCKET,
+    EMOJI_SUCCESS,
+    EMOJI_TROPHY,
+    EMOJI_WARNING,
+)
+from .processor import PublishFn, ReplayFn, format_positions, process_entries
+from .weights import publish
+
+# Re-export types for convenience
+__all__ = ["run_epoch"]
+
+
+def run_epoch(
+    verifier_url: str,
+    epoch_version: str,
+    settings: ValidatorSettings,
+    *,
+    timeout: float = 15.0,
+    dry_run: bool = False,
+    replay_fn: ReplayFn = replay_owner,
+    publish_fn: PublishFn = publish,
+    use_verified_amounts: bool = False,
+    subtensor: Any | None = None,
+    wallet: Any | None = None,
+    metagraph: Any | None = None,
+    validator_uid: int | None = None,
+    args: Any | None = None,
+) -> dict[str, Any]:
+    """Run a single epoch: fetch entries, process, score, and publish weights.
+
+    Args:
+        verifier_url: Base URL of the verifier service
+        epoch_version: Epoch version identifier (ISO8601 format)
+        settings: Validator settings
+        timeout: HTTP timeout for verifier requests
+        dry_run: If True, don't publish weights
+        replay_fn: Function to replay on-chain events
+        publish_fn: Function to publish weights
+        use_verified_amounts: Skip RPC replay and use verifier amounts
+        subtensor: Bittensor subtensor instance (created if None)
+        wallet: Bittensor wallet instance (created if None)
+        metagraph: Bittensor metagraph instance (optional)
+        validator_uid: Validator UID (optional)
+        args: Command-line arguments (for log_dir)
+
+    Returns:
+        Dictionary with scores, weights, ranking, and summary
+    """
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Starting validator run{ANSI_RESET} "
+        f"for epoch {ANSI_BOLD}{ANSI_MAGENTA}{epoch_version}{ANSI_RESET} "
+        f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
+    )
+
+    # SECURITY: Detect mainnet and enforce RPC validation (defense in depth)
+    is_mainnet = False
+    if subtensor is not None:
+        network_name = getattr(subtensor, "network", None)
+        if network_name == "finney":
+            is_mainnet = True
+    if metagraph is not None and hasattr(metagraph, "netuid"):
+        if metagraph.netuid == 35:
+            is_mainnet = True
+    if settings.netuid == 35:
+        is_mainnet = True
+
+    # SECURITY: Block --use-verified-amounts on mainnet (defense in depth)
+    if is_mainnet and use_verified_amounts:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}🚨 SECURITY ERROR:{ANSI_RESET} "
+            f"--use-verified-amounts is FORBIDDEN on mainnet!"
+        )
+        raise RuntimeError(
+            "Security violation: --use-verified-amounts cannot be used on mainnet. "
+            "RPC validation is required for production security."
+        )
+
+    # Check if we're in testnet mode and warn about RPC requirements
+    if not use_verified_amounts:
+        # Check if RPC URLs are configured for the chains we might encounter
+        # Common testnet chain ID is 31337
+        testnet_chain_id = 31337
+        if testnet_chain_id in settings.rpc_urls:
+            rpc_url = settings.rpc_urls[testnet_chain_id]
+            # Check if it's localhost (common testnet default that won't work)
+            if "localhost" in rpc_url or "127.0.0.1" in rpc_url:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  RPC Configuration Warning:{ANSI_RESET}\n"
+                    f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                    f"and have a localhost RPC configured ({rpc_url}).\n"
+                    f"  {ANSI_DIM}If you're on testnet, RPC endpoints are not available.{ANSI_RESET}\n"
+                    f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                    f"to bypass RPC replay and use verifier-supplied amounts.\n"
+                    f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
+                )
+        elif not settings.rpc_urls:
+            # No RPC URLs configured at all
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  No RPC Configuration:{ANSI_RESET}\n"
+                f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                f"but no RPC URLs are configured.\n"
+                f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
+                f"to bypass RPC replay, or configure RPC URLs in config.py.\n"
+                f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
+            )
+
+    try:
+        with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
+            bt.logging.debug(
+                f"{ANSI_DIM}Fetching verified miners from {verifier_url}/v1/verified-miners?epoch={epoch_version}{ANSI_RESET}"
+            )
+            response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
+            response.raise_for_status()
+            entries = response.json()
+    except httpx.HTTPStatusError as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER HTTP ERROR]{ANSI_RESET} "
+            f"Verifier returned error status: {exc.response.status_code}"
+        )
+        bt.logging.error(f"URL: {exc.request.url}")
+        bt.logging.error(f"Response: {exc.response.text[:500] if exc.response.text else 'No response body'}")
+        raise RuntimeError(
+            f"Verifier HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
+        ) from exc
+    except httpx.RequestError as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER REQUEST ERROR]{ANSI_RESET} "
+            f"Failed to connect to verifier: {exc}"
+        )
+        bt.logging.error(f"URL: {verifier_url}/v1/verified-miners")
+        bt.logging.error(f"Error type: {type(exc).__name__}")
+        raise RuntimeError(f"Failed to connect to verifier at {verifier_url}: {exc}") from exc
+    except Exception as exc:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}[VERIFIER ERROR]{ANSI_RESET} "
+            f"Unexpected error fetching verified miners: {exc}"
+        )
+        bt.logging.error(f"Error type: {type(exc).__name__}")
+        bt.logging.error(f"URL: {verifier_url}/v1/verified-miners?epoch={epoch_version}")
+        import traceback
+        bt.logging.error(f"Traceback:\n{traceback.format_exc()}")
+        raise
+
+    # Confirm epoch version: verify all entries match the requested epoch
+    # Note: Verifier may return a different epoch (last frozen) if current epoch is not frozen yet
+    # This is expected behavior and ensures validators only use frozen epoch data
+    actual_epoch_version = None
+    if entries:
+        # Check if all entries have the same epoch_version
+        epoch_versions = {
+            entry.get("epoch_version")
+            for entry in entries
+            if entry.get("epoch_version")
+        }
+        if len(epoch_versions) == 1:
+            actual_epoch_version = epoch_versions.pop()
+        elif len(epoch_versions) > 1:
+            # Multiple different epochs - this is unexpected
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Multiple epoch versions in response:{ANSI_RESET} "
+                f"{epoch_versions}. {ANSI_DIM}This may indicate a verifier issue.{ANSI_RESET}"
+            )
+            # Use the most common epoch version
+            epoch_counts = Counter(
+                entry.get("epoch_version")
+                for entry in entries
+                if entry.get("epoch_version")
+            )
+            actual_epoch_version = epoch_counts.most_common(1)[0][0]
+
+        if actual_epoch_version and actual_epoch_version != epoch_version:
+            # Verifier returned a different epoch (likely last frozen epoch fallback)
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_INFO} Epoch fallback:{ANSI_RESET} "
+                f"Requested {epoch_version} (not frozen yet), "
+                f"verifier returned {actual_epoch_version} (last frozen epoch). "
+                f"{ANSI_DIM}Using frozen epoch data for consistency.{ANSI_RESET}"
+            )
+            # Update epoch_version to match what was actually returned
+            epoch_version = actual_epoch_version
+        elif actual_epoch_version == epoch_version:
+            bt.logging.debug(
+                f"{ANSI_DIM}Epoch version confirmed: all {len(entries)} entries match {epoch_version}{ANSI_RESET}"
+            )
+        else:
+            # No entries or no epoch_version in entries
+            bt.logging.debug(
+                f"{ANSI_DIM}No entries returned for epoch {epoch_version}{ANSI_RESET}"
+            )
+
+    if subtensor is None:
+        subtensor = bt.subtensor()
+    if wallet is None:
+        wallet = bt.wallet()
+
+    result = process_entries(
+        entries,
+        settings,
+        epoch_version,
+        dry_run=dry_run,
+        replay_fn=replay_fn,
+        publish_fn=publish_fn,
+        subtensor=subtensor,
+        wallet=wallet,
+        metagraph=metagraph,
+        validator_uid=validator_uid,
+        use_verified_amounts=use_verified_amounts,
+    )
+
+    # Include the actual epoch version used (may differ from requested if fallback occurred)
+    result["epoch_version"] = epoch_version
+
+    summary = result["summary"]
+    bt.logging.info(
+        f"Epoch {epoch_version} summary: rows={summary['total_rows']} miners={summary['total_miners']} "
+        f"scored={summary['scored']} skipped={summary['skipped']} failures={summary['failures']} "
+        f"missingUid={summary['missing_uid']} inferredBlocks={summary['inferred_blocks']} "
+        f"avgReplay={summary['avg_replay_ms']:.2f}ms maxLag={summary['max_rpc_lag']} dryRun={dry_run}"
+    )
+
+    # Save detailed ranking to log file
+    log_dir_str = (
+        getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
+    )
+    log_dir = Path(log_dir_str)
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    log_file = (
+        log_dir
+        / f"weights_{epoch_version.replace(':', '-').replace('T', '_').replace('Z', '')}_{timestamp}.json"
+    )
+
+    ranking_payload = [
+        {
+            "uid": item["uid"],
+            "hotkey": item["hotkey"],
+            "slot_uid": item.get("slot_uid"),
+            "score": round(item["score"], 6),
+            "weight": round(item["weight"], 6),
+            "positions": format_positions(item["positions"], result["unit"]),
+        }
+        for item in result["ranking"]
+    ]
+
+    log_entry = {
+        "epoch_version": epoch_version,
+        "timestamp": datetime.now(UTC).isoformat(),
+        "dry_run": dry_run,
+        "summary": summary,
+        "ranking": ranking_payload,
+    }
+
+    log_file.write_text(json.dumps(log_entry, indent=2))
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_BLOCK} Weight vector saved{ANSI_RESET} "
+        f"to {ANSI_DIM}{log_file}{ANSI_RESET}"
+    )
+
+    if dry_run:
+        # In dry-run, also print a summary to console
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_BRIGHT_CYAN}{EMOJI_CHART} Dry-run summary:{ANSI_RESET} "
+            f"{ANSI_BOLD}{summary['scored']}{ANSI_RESET} miners scored, weights computed "
+            f"{ANSI_DIM}(see log file for details){ANSI_RESET}"
+        )
+        # Print only top 5 at info level, full list at debug level
+        for i, item in enumerate(result["ranking"][:5], 1):
+            medal = EMOJI_TROPHY if i == 1 else f"#{i}"
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_CYAN}{medal}{ANSI_RESET} "
+                f"UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
+                f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
+                f"weight={ANSI_BRIGHT_GREEN}{item['weight']:.6f}{ANSI_RESET}"
+            )
+        bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
+    else:
+        # In production mode, log summary with top miners
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Published weights{ANSI_RESET} "
+            f"for {ANSI_BOLD}{summary['scored']}{ANSI_RESET} miners "
+            f"{ANSI_DIM}(epoch {epoch_version}){ANSI_RESET}\n"
+            f"{ANSI_DIM}Full details saved to {log_file}{ANSI_RESET}"
+        )
+        # Show top 5 miners at info level, full list at debug level
+        for i, item in enumerate(result["ranking"][:5], 1):
+            medal = (
+                f"{EMOJI_TROPHY} " if i == 1 else f"{ANSI_BRIGHT_CYAN}#{i}{ANSI_RESET} "
+            )
+            bt.logging.info(
+                f"{medal}UID={ANSI_BOLD}{item['uid']}{ANSI_RESET} "
+                f"score={ANSI_GREEN}{item['score']:.6f}{ANSI_RESET} "
+                f"weight={ANSI_BRIGHT_GREEN}{item['weight']:.6f}{ANSI_RESET}"
+            )
+        if len(result["ranking"]) > 5:
+            bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
+
+    return result
+

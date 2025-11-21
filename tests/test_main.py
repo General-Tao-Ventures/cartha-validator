@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 from cartha_validator.config import DEFAULT_SETTINGS
-from cartha_validator.main import process_entries
+from cartha_validator.processor import process_entries
 
 
 class DummyWeb3:
@@ -20,7 +20,7 @@ class DummyWeb3:
 
 @pytest.fixture(autouse=True)
 def patch_web3(monkeypatch):
-    monkeypatch.setattr("cartha_validator.main.Web3", DummyWeb3)
+    monkeypatch.setattr("cartha_validator.processor.Web3", DummyWeb3)
     yield
 
 
