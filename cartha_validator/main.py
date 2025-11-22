@@ -22,6 +22,7 @@ from .logging import (
     EMOJI_BLOCK,
     EMOJI_COIN,
     EMOJI_GEAR,
+    EMOJI_INFO,
     EMOJI_NETWORK,
     EMOJI_ROCKET,
     EMOJI_SUCCESS,
@@ -30,7 +31,7 @@ from .logging import (
 from .weights import publish
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args():
     """Parse command-line arguments (delegates to config.parse_args)."""
     return parse_args()
 

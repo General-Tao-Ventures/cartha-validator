@@ -165,16 +165,21 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners?epoch=$(date -u +%Y-%m-%dT00:00:
 
 For each verified miner, the validator:
 
-1. (Optional) Replays on-chain events to get current positions
-2. Calculates scores based on:
+1. (Optional) Replays on-chain events to get current positions (or uses verifier-supplied amounts with `--use-verified-amounts`)
+2. Filters out expired pools (pools with `expires_at` in the past)
+3. Calculates scores based on:
    - Locked amount
    - Lock duration (lockDays)
    - Pool weights
    - Temperature curve
+   - Expired pool filtering
 
-### Step 3: Publish Weights
+### Step 3: Cache & Publish Weights
 
-Normalized weights are published to Bittensor via `set_weights()`.
+- Normalized weights are computed once per weekly epoch
+- Weights are cached for the entire week
+- Cached weights are published to Bittensor via `set_weights()` every Bittensor epoch (tempo blocks)
+- Daily expiry checks update cached weights when pools expire
 
 ## Configuration Options
 
@@ -235,9 +240,13 @@ score_temperature = 1000.0
 
 ### Epoch Schedule
 
-- **Epoch Start**: Friday 00:00 UTC
+- **Weekly Epoch Start**: Friday 00:00 UTC
+- **Weekly Epoch End**: Thursday 23:59 UTC (7 days total)
 - **Epoch Version**: ISO8601 format (`YYYY-MM-DDT00:00:00Z`)
-- Validators should run after epoch freeze
+- **Weight Calculation**: Once per week at epoch start
+- **Weight Publishing**: Every Bittensor epoch (tempo blocks) throughout the week
+- **Daily Expiry Checks**: Performed daily during the week to filter expired pools
+- Validators should run continuously to catch epoch boundaries and perform daily checks
 
 ## Monitoring
 
@@ -289,10 +298,13 @@ uv run python -m cartha_validator.main \
 
 - Per-miner replay timing and RPC lag
 - Full ranking details (all miners, not just top 5)
-- Detailed scoring calculations
+- Detailed scoring calculations per pool
 - Position aggregation by pool
-- Epoch detection and processing steps
-- Metagraph sync information
+- Epoch detection and processing steps (weekly epoch boundaries)
+- Daily expiry check status and expired pool filtering
+- Metagraph sync information (block numbers, tempo)
+- Weight caching and publishing status
+- Epoch fallback events (when verifier returns last frozen epoch)
 
 ### Logs
 
@@ -309,6 +321,12 @@ tail -f validator_logs/weights_*.json
 
 # Check last run
 ls -lt validator_logs/ | head -5
+
+# View latest log file content
+cat $(ls -t validator_logs/weights_*.json | head -1) | jq .
+
+# Check for expired pools in latest run
+cat $(ls -t validator_logs/weights_*.json | head -1) | jq '.summary.expired_pools'
 ```
 
 ### Health Checks
@@ -383,6 +401,27 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 - Verify miner data format from verifier
 - Ensure pool weights are configured correctly
 - Check for division by zero or invalid values
+- Verify expired pool filtering is working correctly
+
+### "Epoch fallback detected"
+
+**Problem**: Validator logs show epoch fallback event
+
+**Solution**:
+
+- This is **normal behavior** - the verifier returns the last frozen epoch if the requested epoch isn't frozen yet
+- Validator automatically uses the frozen epoch data for consistency
+- No action needed; validator will process the correct epoch when it becomes available
+
+### "No cached weights available"
+
+**Problem**: Validator logs show "No cached weights available"
+
+**Solution**:
+
+- This can happen on startup before first weekly epoch is processed
+- Validator will fetch and compute weights on next weekly epoch boundary
+- Ensure validator is running continuously to catch epoch boundaries
 
 ## Testing Your Validator
 
@@ -419,6 +458,8 @@ Verify:
 - Scores are in [0, 1] range
 - Weights sum to 1.0
 - Miners are ranked correctly
+- Expired pools are filtered out (check `summary.expired_pools` in log file)
+- Epoch version matches expected weekly epoch
 
 ### Step 3: Test with Real Data
 
@@ -453,7 +494,30 @@ uv run python -m cartha_validator.main \
 
 ## Automation
 
-### Cron Job
+### Continuous Daemon Mode (Recommended)
+
+Run validator continuously to catch weekly epoch boundaries and perform daily expiry checks:
+
+```bash
+# Run as daemon (default behavior)
+uv run python -m cartha_validator.main \
+  --verifier-url "${CARTHA_VERIFIER_URL}" \
+  --netuid 78 \
+  --subtensor.network test \
+  --wallet-name <your-wallet-name> \
+  --wallet-hotkey <your-hotkey-name> \
+  --use-verified-amounts \
+  --poll-interval 300
+```
+
+The validator will:
+- Detect weekly epoch boundaries (Friday 00:00 UTC)
+- Compute and cache weights once per week
+- Publish cached weights every Bittensor epoch (tempo blocks)
+- Perform daily expiry checks during the week
+- Sync metagraph every 100 blocks
+
+### Cron Job (Alternative)
 
 Run validator on a schedule (e.g., after epoch freeze):
 
@@ -467,8 +531,11 @@ cd /path/to/cartha-subnet-validator && \
     --subtensor.network test \
     --wallet-name <your-wallet-name> \
     --wallet-hotkey <your-hotkey-name> \
-    --use-verified-amounts
+    --use-verified-amounts \
+    --run-once
 ```
+
+**Note**: Using cron with `--run-once` means weights are only published once per week. For continuous operation with Bittensor epoch publishing, use daemon mode instead.
 
 ### Systemd Service
 
@@ -497,11 +564,29 @@ Restart=always
 WantedBy=multi-user.target
 ```
 
+## Understanding Weekly Epochs
+
+The validator operates on a **weekly epoch cycle**:
+
+- **Epoch Start**: Friday 00:00 UTC
+- **Epoch End**: Thursday 23:59 UTC (7 days)
+- **Weight Calculation**: Once per week at epoch start
+- **Weight Publishing**: Every Bittensor epoch (tempo blocks) throughout the week
+- **Daily Checks**: Validator checks for expired pools daily during the week
+
+This means:
+- Weights are computed once per week and cached
+- The same weights are published every Bittensor epoch during the week
+- Expired pools are filtered out daily, updating cached weights
+- New weekly epochs trigger a fresh weight calculation
+
 ## Next Steps
 
 - Review the [Validator README](../README.md) for advanced configuration
-- Check [Architecture Docs](../docs/ARCHITECTURE.md) for scoring details
+- Check [Architecture Docs](../docs/ARCHITECTURE.md) for scoring details and weekly epoch system
+- Review [Command Reference](../docs/COMMANDS.md) for all available options
 - Monitor validator performance and adjust scoring parameters
+- Check log files in `validator_logs/` for detailed metrics
 - Provide feedback via [GitHub Issues](../../.github/ISSUE_TEMPLATE/)
 
 ## Additional Resources

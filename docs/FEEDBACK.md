@@ -101,10 +101,12 @@ If you encounter RPC or replay problems:
 
 For performance-related feedback:
 
-- Include timing information from logs
+- Include timing information from logs (replay timing, RPC lag, etc.)
 - Note the number of miners being processed
 - Share system resources (CPU, memory)
 - Compare with previous performance if applicable
+- Include weekly epoch information and daily expiry check timing
+- Note Bittensor epoch length (tempo) and publishing frequency
 
 ## Feedback Best Practices
 

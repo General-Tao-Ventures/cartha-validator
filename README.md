@@ -6,11 +6,9 @@
 
 Cartha Validator provides a complete, production-ready solution for running a validator on the Cartha subnet:
 
-- **📊 Intelligent Scoring** - Score miners based on locked USDC amounts, lock duration, and pool weights
-- **⛓️ On-Chain Validation** - Replay vault events from the blockchain to verify positions independently
-- **🔄 Epoch Management** - Automatic epoch detection and weight publishing at Friday 00:00 UTC
-- **🛡️ Security First** - Enforces on-chain validation on mainnet, preventing shortcuts that could compromise security
-- **📈 Production Ready** - Continuous daemon mode with configurable polling intervals and comprehensive logging
+- **📊 Intelligent Scoring** - Score miners based on locked USDC amounts, lock duration, pool weights, and expired pool filtering
+- **⛓️ On-Chain Validation** - Replay vault events from the blockchain to verify positions independently (required on mainnet)
+- **🔄 Weekly Epoch Management** - Automatic weekly epoch detection (Friday 00:00 UTC) with daily expiry checks
 
 ## Quick Start
 
@@ -42,16 +40,19 @@ uv run python -m cartha_validator.main \
 
 ## How It Works
 
-The validator operates on a weekly epoch cycle (Friday 00:00 UTC):
+The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursday 23:59 UTC):
 
-1. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier
-2. **Replay Positions** - For each miner, replays vault events from the blockchain to reconstruct their USDC positions
-3. **Score Liquidity** - Calculates scores based on:
+1. **Weekly Epoch Detection** - Detects the current weekly epoch (Friday 00:00 UTC boundary)
+2. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier for the current weekly epoch
+3. **Daily Expiry Checks** - Performs daily checks during the week to filter out expired pools
+4. **Replay Positions** - For each miner, replays vault events from the blockchain to reconstruct their USDC positions (or uses verifier-supplied amounts in testnet mode)
+5. **Score Liquidity** - Calculates scores based on:
    - Locked USDC amounts (6 decimals)
    - Lock duration (with Model-1 boost)
    - Pool weights (configurable per pool)
    - Temperature curve (default: 1000)
-4. **Normalize & Publish** - Normalizes scores to weights and publishes via `set_weights` to Bittensor
+   - Expired pool filtering (pools with `expires_at` in the past are excluded)
+6. **Cache & Publish** - Normalizes scores to weights, caches them for the week, and publishes via `set_weights` to Bittensor every Bittensor epoch (tempo blocks)
 
 ## Scoring Algorithm
 
@@ -88,10 +89,32 @@ Cartha Validator enforces strict security policies:
 - **On-Chain Validation Required** - The `--use-verified-amounts` flag is **forbidden on mainnet** (netuid 35, network "finney") to ensure all positions are verified via blockchain replay
 - **Epoch Freezing** - Uses verifier's epoch-frozen snapshots to prevent manipulation
 - **Independent Verification** - Replays events directly from the blockchain, not relying solely on verifier data
+- **Registration Validation** - Checks that the validator hotkey is registered before running
+- **Expired Pool Filtering** - Automatically filters out pools that have expired (`expires_at` in the past)
+- **RPC Configuration Warnings** - Warns about misconfigured RPC endpoints (e.g., localhost on mainnet)
+
+## Key Features
+
+### Weekly Epoch System
+- **Epoch Duration**: Friday 00:00 UTC → Thursday 23:59 UTC (7 days)
+- **Weight Calculation**: Computed once per week at epoch start
+- **Weight Publishing**: Cached weights are republished every Bittensor epoch (tempo blocks) throughout the week
+- **Daily Expiry Checks**: Validator checks for expired pools daily and updates weights accordingly
+
+### Continuous Operation
+- **Daemon Mode**: Runs continuously, checking for new epochs every `--poll-interval` seconds (default: 300s = 5 minutes)
+- **Metagraph Syncing**: Automatically syncs metagraph every 100 blocks to stay current
+- **Bittensor Epoch Integration**: Publishes cached weights every Bittensor epoch (tempo) during the weekly cycle
+- **Startup Behavior**: On startup, always fetches and publishes weights (bypasses cooldown)
+
+### Epoch Fallback
+- If the requested epoch isn't frozen yet, the verifier returns the last frozen epoch
+- Validator automatically uses the frozen epoch data for consistency
+- Logs epoch fallback events for transparency
 
 ## Development
 
-   ```bash
+```bash
 # Run tests
 make test
 

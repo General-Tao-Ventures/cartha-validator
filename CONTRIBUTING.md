@@ -158,14 +158,23 @@ Closes #123
 ```text
 cartha-subnet-validator/
 ├── cartha_validator/     # Main validator code
-│   ├── main.py          # Entry point
-│   ├── indexer.py       # RPC replay logic
-│   ├── scoring.py       # Scoring algorithms
-│   ├── weights.py       # Weight publishing
-│   └── config.py        # Configuration
-├── abis/                # Contract ABIs
+│   ├── main.py          # Entry point, daemon loop, weekly epoch detection
+│   ├── epoch_runner.py  # Single epoch execution orchestration
+│   ├── processor.py    # Entry processing, UID resolution, position aggregation
+│   ├── indexer.py       # RPC replay logic (Model-1 vault events)
+│   ├── scoring.py       # Scoring algorithms with pool weights and temperature
+│   ├── weights.py       # Weight normalization and publishing
+│   ├── config.py        # Configuration and argument parsing
+│   ├── epoch.py         # Weekly epoch boundary helpers
+│   ├── logging.py       # ANSI colors and emoji helpers
+│   └── register.py      # Registration helpers
+├── abis/                # Contract ABIs (vault.json)
 ├── tests/               # Test suite
 ├── docs/                # Documentation
+│   ├── ARCHITECTURE.md  # Architecture overview
+│   ├── COMMANDS.md      # Command reference
+│   ├── TESTNET_SETUP.md # Testnet setup guide
+│   └── FEEDBACK.md      # Feedback guide
 └── pyproject.toml       # Project config
 ```
 
@@ -209,6 +218,9 @@ cartha-subnet-validator/
 - Document scoring formulas
 - Add tests for edge cases
 - Consider performance implications
+- Ensure expired pool filtering works correctly
+- Test weekly epoch boundary detection
+- Verify weight caching behavior
 
 ### Security
 
@@ -216,6 +228,10 @@ cartha-subnet-validator/
 - Validate all inputs
 - Use type hints for safety
 - Follow security best practices
+- Ensure `--use-verified-amounts` is blocked on mainnet
+- Validate RPC endpoint configuration
+- Test expired pool filtering
+- Verify epoch fallback behavior
 
 ## Questions?
 

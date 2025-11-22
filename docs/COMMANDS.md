@@ -50,8 +50,8 @@ uv run python -m cartha_validator.main [OPTIONS]
 
 | Argument | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--log-dir` | string | `validator_logs` | Directory to save epoch weight logs |
-| `--logging.debug` | flag | `True` | Enable debug logging (default: enabled) |
+| `--log-dir` | string | `validator_logs` | Directory to save epoch weight logs (default: `validator_logs`) |
+| `--logging.debug` | flag | `True` | Enable debug logging (default: enabled, use `--logging.debug=False` to disable) |
 
 ### Bittensor Arguments
 
@@ -213,10 +213,13 @@ uv run python -m cartha_validator.main \
 ```
 
 The validator will:
-- Check for new epochs every 5 minutes (or your configured interval)
-- Process epochs automatically when they become available
-- Publish weights to the Bittensor network
-- Log all operations to `validator_logs/`
+- Check for new weekly epochs every 5 minutes (or your configured interval)
+- Process weekly epochs automatically when they become available (Friday 00:00 UTC)
+- Perform daily expiry checks during the week to filter expired pools
+- Cache computed weights for the entire week
+- Publish cached weights every Bittensor epoch (tempo blocks) throughout the week
+- Sync metagraph every 100 blocks to stay current
+- Log all operations to `validator_logs/` with detailed JSON logs
 
 ### Systemd Service
 
@@ -267,7 +270,9 @@ WantedBy=multi-user.target
 
 - Verify system clock is synchronized (NTP)
 - Check timezone settings (epochs are UTC-based)
+- Weekly epochs start Friday 00:00 UTC → Thursday 23:59 UTC
 - Use `--epoch` to manually specify epoch if needed
+- Validator performs daily expiry checks during the week
 
 ### Debugging
 
@@ -283,10 +288,14 @@ uv run python -m cartha_validator.main \
 ```
 
 This will show:
-- Per-miner replay timing
-- RPC call details
-- Scoring calculations
+- Per-miner replay timing and RPC lag
+- Full ranking details (all miners, not just top 5)
+- Detailed scoring calculations per pool
 - Weight normalization steps
+- Epoch detection and fallback events
+- Daily expiry check status
+- Metagraph sync information
+- Expired pool filtering
 
 ## Output Format
 
@@ -316,10 +325,32 @@ When using `--dry-run`, the validator prints a ranked JSON structure:
 
 Weight logs are saved to `validator_logs/` with filenames like:
 ```
-weights_2024-01-05_00-00-00_20240105_120000.json
+weights_2024-01-05T00-00-00Z_20240105_120000.json
 ```
 
-Each log file contains the complete epoch processing results.
+Each log file contains:
+- Epoch version and timestamp
+- Dry-run flag
+- Summary metrics (total rows, miners, scored, skipped, failures, expired pools, replay timing, RPC lag)
+- Complete ranking with UID, hotkey, slot_uid, score, weight, and position details
+
+### Continuous Operation Details
+
+When running in daemon mode (default, without `--run-once`):
+
+- **Weekly Epoch Detection**: Detects new weekly epochs (Friday 00:00 UTC boundary)
+- **Weight Caching**: Computes and caches weights once per week
+- **Bittensor Epoch Publishing**: Publishes cached weights every Bittensor epoch (tempo blocks)
+- **Daily Expiry Checks**: Checks for expired pools daily and updates cached weights
+- **Metagraph Syncing**: Syncs metagraph every 100 blocks
+- **Startup Behavior**: Always fetches and publishes weights on startup (bypasses cooldown)
+
+### Epoch Fallback Behavior
+
+If the requested epoch isn't frozen yet, the verifier returns the last frozen epoch. The validator:
+- Logs the epoch fallback event
+- Uses the frozen epoch data for consistency
+- Continues processing with the frozen epoch version
 
 ---
 
