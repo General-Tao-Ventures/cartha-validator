@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
+from datetime import UTC, datetime
 from statistics import mean
 from time import perf_counter
 from typing import Any
@@ -12,7 +13,7 @@ from web3 import Web3
 
 from .config import ValidatorSettings
 from .indexer import replay_owner
-from .logging import ANSI_BOLD, ANSI_RED, ANSI_YELLOW
+from .logging import ANSI_BOLD, ANSI_RED, ANSI_RESET, ANSI_YELLOW
 from .scoring import score_entry
 from .weights import _normalize, publish
 
@@ -34,7 +35,11 @@ PublishFn = Callable[
 
 def resolve_owner(entry: Mapping[str, Any]) -> str | None:
     """Extract owner EVM address from entry."""
-    return entry.get("minerEvmAddress") or entry.get("miner_evm_address") or entry.get("evm")
+    return (
+        entry.get("minerEvmAddress")
+        or entry.get("miner_evm_address")
+        or entry.get("evm")
+    )
 
 
 def resolve_block(entry: Mapping[str, Any]) -> int | None:
@@ -93,6 +98,7 @@ def process_entries(
         "inferred_blocks": 0,
         "replay_ms": [],
         "rpc_lag_blocks": [],
+        "expired_pools": 0,
     }
     unit = float(10**settings.token_decimals)
     web3_cache: dict[int, Web3] = {}
@@ -115,6 +121,7 @@ def process_entries(
             )
         except Exception as exc:  # pragma: no cover
             import traceback
+
             bt.logging.error(
                 f"{ANSI_BOLD}{ANSI_RED}[UID RESOLUTION ERROR]{ANSI_RESET} "
                 f"Failed to resolve UID for hotkey"
@@ -156,7 +163,48 @@ def process_entries(
 
         for entry in miner_entries:
             if use_verified_amounts:
-                pool_id = "default"  # No longer exposed, use default
+                # Use pool_id from verifier (now included in VerifiedMinerEntry)
+                pool_id = entry.get("pool_id", "default")
+
+                # Check if this pool has expired
+                expires_at_str = entry.get("expires_at")
+                if expires_at_str:
+                    try:
+                        # Parse expires_at - handle both ISO format strings and datetime objects
+                        if isinstance(expires_at_str, str):
+                            # Handle ISO format with or without timezone
+                            if expires_at_str.endswith("Z"):
+                                expires_at = datetime.fromisoformat(
+                                    expires_at_str.replace("Z", "+00:00")
+                                )
+                            else:
+                                expires_at = datetime.fromisoformat(expires_at_str)
+                            # Ensure timezone-aware
+                            if expires_at.tzinfo is None:
+                                expires_at = expires_at.replace(tzinfo=UTC)
+                        else:
+                            expires_at = expires_at_str
+                            if expires_at.tzinfo is None:
+                                expires_at = expires_at.replace(tzinfo=UTC)
+
+                        current_time = datetime.now(UTC)
+                        if expires_at < current_time:
+                            # Pool has expired - skip this pool (don't add to combined_positions)
+                            hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
+                            bt.logging.debug(
+                                f"Pool {pool_id} expired for uid={uid} hotkey={hotkey}: "
+                                f"expires_at={expires_at} < current_time={current_time}"
+                            )
+                            metrics["expired_pools"] = (
+                                metrics.get("expired_pools", 0) + 1
+                            )
+                            continue
+                    except (ValueError, TypeError) as exc:
+                        bt.logging.warning(
+                            f"Failed to parse expires_at for uid={uid} pool={pool_id}: {expires_at_str}, error: {exc}"
+                        )
+                        # Continue processing if we can't parse expires_at (don't skip the pool)
+
                 amount = int(entry.get("amount", 0))
                 lock_days = int(entry.get("lock_days", 0))
                 existing = combined_positions.setdefault(
@@ -194,6 +242,7 @@ def process_entries(
                     web3_cache[chain_id] = provider
             except Exception as exc:
                 import traceback
+
                 bt.logging.error(
                     f"{ANSI_BOLD}{ANSI_RED}[RPC INIT ERROR]{ANSI_RESET} "
                     f"Failed to initialise Web3 provider for chain {chain_id}"
@@ -201,7 +250,9 @@ def process_entries(
                 bt.logging.error(f"Error type: {type(exc).__name__}")
                 bt.logging.error(f"Error message: {str(exc)}")
                 bt.logging.error(f"UID: {uid}, Chain: {chain_id}, Vault: {vault}")
-                bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                bt.logging.error(
+                    f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}"
+                )
                 bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                 # If RPC is not available and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
@@ -228,6 +279,7 @@ def process_entries(
                     )
                 except Exception as exc:  # pragma: no cover
                     import traceback
+
                     bt.logging.error(
                         f"{ANSI_BOLD}{ANSI_RED}[BLOCK INFERENCE ERROR]{ANSI_RESET} "
                         f"Unable to infer block for uid={uid}"
@@ -235,7 +287,9 @@ def process_entries(
                     bt.logging.error(f"Error type: {type(exc).__name__}")
                     bt.logging.error(f"Error message: {str(exc)}")
                     bt.logging.error(f"Chain: {chain_id}, Vault: {vault}")
-                    bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                    bt.logging.error(
+                        f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}"
+                    )
                     bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                     metrics["failures"] += 1
                     miner_failed = True
@@ -248,14 +302,19 @@ def process_entries(
                 )
             except Exception as exc:  # pragma: no cover
                 import traceback
+
                 bt.logging.error(
                     f"{ANSI_BOLD}{ANSI_RED}[REPLAY ERROR]{ANSI_RESET} "
                     f"Replay failed for uid={uid}"
                 )
                 bt.logging.error(f"Error type: {type(exc).__name__}")
                 bt.logging.error(f"Error message: {str(exc)}")
-                bt.logging.error(f"Chain: {chain_id}, Vault: {vault}, Owner: {owner}, Block: {at_block}")
-                bt.logging.error(f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}")
+                bt.logging.error(
+                    f"Chain: {chain_id}, Vault: {vault}, Owner: {owner}, Block: {at_block}"
+                )
+                bt.logging.error(
+                    f"RPC URL: {settings.rpc_urls.get(chain_id, 'NOT CONFIGURED')}"
+                )
                 bt.logging.debug(f"Traceback:\n{traceback.format_exc()}")
                 # If RPC connection failed and we're not using verified amounts, suggest using the flag
                 if not use_verified_amounts and "Connection refused" in str(exc):
@@ -356,4 +415,3 @@ def process_entries(
         "summary": summary,
         "unit": unit,
     }
-

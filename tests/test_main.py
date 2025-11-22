@@ -83,7 +83,7 @@ def test_process_entries_dry_run(monkeypatch):
 def test_process_entries_publishes(monkeypatch):
     published: dict[int, float] = {}
 
-    def publish_stub(scores, epoch_version, settings, subtensor=None, wallet=None, metagraph=None, validator_uid=None):
+    def publish_stub(scores, epoch_version, settings, subtensor=None, wallet=None, metagraph=None, validator_uid=None, force=False):
         assert epoch_version == "2024-11-08T00:00:00Z"
         published.update({uid: 0.5 for uid in scores})
         return {uid: 0.5 for uid in scores}

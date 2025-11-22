@@ -243,11 +243,12 @@ def run_epoch(
     result["epoch_version"] = epoch_version
 
     summary = result["summary"]
+    expired_pools = summary.get("expired_pools", 0)
     bt.logging.info(
         f"Epoch {epoch_version} summary: rows={summary['total_rows']} miners={summary['total_miners']} "
         f"scored={summary['scored']} skipped={summary['skipped']} failures={summary['failures']} "
         f"missingUid={summary['missing_uid']} inferredBlocks={summary['inferred_blocks']} "
-        f"avgReplay={summary['avg_replay_ms']:.2f}ms maxLag={summary['max_rpc_lag']} dryRun={dry_run}"
+        f"expiredPools={expired_pools} avgReplay={summary['avg_replay_ms']:.2f}ms maxLag={summary['max_rpc_lag']} dryRun={dry_run}"
     )
 
     # Save detailed ranking to log file

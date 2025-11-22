@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import UTC, datetime, timedelta
 
 import bittensor as bt
 
@@ -238,9 +239,19 @@ def main() -> None:
                 current_weekly_epoch_version = current_epoch_start.strftime(
                     "%Y-%m-%dT%H:%M:%SZ"
                 )
+                
+                # Track last daily check to query verifier daily for expiry updates
+                current_time = datetime.now(UTC)
+                last_daily_check_key = f"last_daily_check_{current_weekly_epoch_version}"
+                last_daily_check = getattr(main, last_daily_check_key, None)
+                should_check_daily = (
+                    last_daily_check is None 
+                    or (current_time - last_daily_check) >= timedelta(days=1)
+                )
 
                 # Check if this is a new weekly epoch or a restart - fetch frozen list and calculate weights
-                if last_weekly_epoch_version != current_weekly_epoch_version:
+                # OR if it's been a day since last check (for expiry date updates)
+                if last_weekly_epoch_version != current_weekly_epoch_version or should_check_daily:
                     # This could be:
                     # 1. A new weekly epoch (Friday 00:00 UTC)
                     # 2. A validator restart during an ongoing weekly epoch
@@ -268,6 +279,15 @@ def main() -> None:
                     # Force weights on startup (when last_weekly_epoch_version is None) to ensure
                     # validator always sets weights when it starts, bypassing cooldown checks
                     is_startup = last_weekly_epoch_version is None
+                    is_daily_check = should_check_daily and last_weekly_epoch_version == current_weekly_epoch_version
+                    
+                    if is_daily_check:
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_INFO} Daily expiry check{ANSI_RESET} "
+                            f"for weekly epoch {ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
+                            f"{ANSI_DIM}Querying verifier to check for expired pools...{ANSI_RESET}"
+                        )
+                    
                     result = run_epoch(
                         verifier_url=args.verifier_url,
                         epoch_version=current_weekly_epoch_version,
@@ -280,7 +300,7 @@ def main() -> None:
                         metagraph=metagraph,
                         validator_uid=validator_uid,
                         args=args,
-                        force=is_startup,
+                        force=is_startup or is_daily_check,  # Force on startup or daily check
                     )
 
                     # Cache the weights and scores for this weekly epoch
@@ -292,15 +312,29 @@ def main() -> None:
                     cached_epoch_version = result.get(
                         "epoch_version", current_weekly_epoch_version
                     )
+                    
+                    # Update last daily check timestamp
+                    if should_check_daily:
+                        setattr(main, last_daily_check_key, current_time)
+                    
                     # Track the weekly epoch we're in (not necessarily the frozen epoch version)
-                    last_weekly_epoch_version = current_weekly_epoch_version
-                    last_weight_publish_block = current_block
-                    step += 1
-                    bt.logging.info(
-                        f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weekly epoch weights calculated and cached{ANSI_RESET} "
-                        f"{ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
-                        f"{ANSI_DIM}Will publish these weights every Bittensor epoch (~{bittensor_epoch_length} blocks) throughout the week.{ANSI_RESET}"
-                    )
+                    if last_weekly_epoch_version != current_weekly_epoch_version:
+                        last_weekly_epoch_version = current_weekly_epoch_version
+                        last_weight_publish_block = current_block
+                        step += 1
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weekly epoch weights calculated and cached{ANSI_RESET} "
+                            f"{ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
+                            f"{ANSI_DIM}Will publish these weights every Bittensor epoch (~{bittensor_epoch_length} blocks) throughout the week.{ANSI_RESET}"
+                        )
+                    elif is_daily_check:
+                        # Daily check updated cached weights with expiry filtering
+                        expired_count = result.get("summary", {}).get("expired_pools", 0)
+                        bt.logging.info(
+                            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Daily expiry check complete{ANSI_RESET} "
+                            f"for weekly epoch {ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
+                            f"{ANSI_DIM}Expired pools filtered: {expired_count}. Updated weights cached.{ANSI_RESET}"
+                        )
                 else:
                     # Same weekly epoch - check if we need to publish cached weights for this Bittensor epoch
                     if (
