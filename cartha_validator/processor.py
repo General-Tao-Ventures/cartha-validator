@@ -350,10 +350,42 @@ def process_entries(
         if not combined_positions:
             if miner_failed:
                 bt.logging.warning("Skipping uid=%s after replay failures.", uid)
+            else:
+                # All pools expired - log this case
+                hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
+                bt.logging.debug(
+                    f"[SCORING] uid={uid} hotkey={hotkey}: All pools expired, score=0"
+                )
             continue
+
+        # Log scoring details for this miner
+        hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
+        pool_count = len(combined_positions)
+        total_amount = sum(pos.get("amount", 0) for pos in combined_positions.values())
+        bt.logging.debug(
+            f"[SCORING] uid={uid} hotkey={hotkey}: Scoring {pool_count} pool(s), "
+            f"total_amount={total_amount} base_units ({total_amount / unit:.2f} USDC)"
+        )
+        
+        # Log each pool being scored
+        for pool_id, pool_data in combined_positions.items():
+            pool_amount = pool_data.get("amount", 0)
+            pool_lock_days = pool_data.get("lockDays", 0)
+            bt.logging.debug(
+                f"[SCORING] uid={uid} pool={pool_id}: "
+                f"amount={pool_amount} ({pool_amount / unit:.2f} USDC), "
+                f"lock_days={pool_lock_days}"
+            )
 
         score = score_entry(combined_positions, settings=settings)
         scores[uid] = score
+        
+        # Log final score for this miner
+        bt.logging.debug(
+            f"[SCORING] uid={uid} hotkey={hotkey}: "
+            f"final_score={score:.6f} (from {pool_count} pool(s))"
+        )
+        
         metrics["scored"] += 1
         grouped_entry = grouped[uid]
         details.append(
@@ -396,6 +428,16 @@ def process_entries(
 
     for item in details:
         item["weight"] = weights.get(item["uid"], 0.0)
+        # Log final weight assignment
+        uid = item["uid"]
+        hotkey = item.get("hotkey", "unknown")
+        score = item["score"]
+        weight = item["weight"]
+        pool_count = len(item.get("positions", {}))
+        bt.logging.debug(
+            f"[WEIGHT] uid={uid} hotkey={hotkey}: "
+            f"score={score:.6f} → weight={weight:.6f} ({pool_count} pool(s))"
+        )
 
     details.sort(key=lambda item: item["score"], reverse=True)
 
