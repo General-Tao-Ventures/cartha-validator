@@ -83,43 +83,15 @@ def run_epoch(
         f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
     )
 
-    # Check validator whitelist before querying verifier
+    # Get validator hotkey for server-side whitelist check
     if wallet is None:
         wallet = bt.wallet()
     validator_hotkey = wallet.hotkey.ss58_address
     
     bt.logging.info(
-        f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
+        f"{ANSI_BOLD}{ANSI_CYAN}[VALIDATOR]{ANSI_RESET} "
         f"Validator hotkey: {ANSI_BOLD}{validator_hotkey}{ANSI_RESET}"
     )
-    
-    # If whitelist is configured and not empty, check if validator is whitelisted
-    if settings.validator_whitelist:
-        bt.logging.info(
-            f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
-            f"Client-side whitelist configured with {len(settings.validator_whitelist)} entries"
-        )
-        if validator_hotkey not in settings.validator_whitelist:
-            error_msg = (
-                f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED:{ANSI_RESET}\n"
-                f"  Validator hotkey {ANSI_BOLD}{validator_hotkey}{ANSI_RESET} is not in the whitelist.\n"
-                f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
-                f"  {ANSI_DIM}Only whitelisted validators are allowed to query verified miners.{ANSI_RESET}"
-            )
-            bt.logging.error(error_msg)
-            raise RuntimeError(
-                f"Validator {validator_hotkey} is not whitelisted. "
-                "Contact the subnet owner to be added to the validator whitelist."
-            )
-        bt.logging.info(
-            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Validator whitelist check passed{ANSI_RESET} "
-            f"{ANSI_DIM}(hotkey: {validator_hotkey}){ANSI_RESET}"
-        )
-    else:
-        bt.logging.info(
-            f"{ANSI_BOLD}{ANSI_YELLOW}[WHITELIST CHECK]{ANSI_RESET} "
-            f"Client-side whitelist not configured (empty). Server-side check will apply."
-        )
 
     try:
         with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
@@ -144,6 +116,14 @@ def run_epoch(
             response = client.get("/v1/verified-miners", params=params)
             response.raise_for_status()
             entries = response.json()
+            
+            # Check for warning headers from verifier (if any)
+            warning_header = response.headers.get("X-Verifier-Warning")
+            if warning_header:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}[VERIFIER WARNING]{ANSI_RESET} {warning_header}"
+                )
+            
             bt.logging.info(
                 f"{ANSI_BOLD}{ANSI_GREEN}[VERIFIER REQUEST]{ANSI_RESET} "
                 f"Successfully fetched {len(entries)} verified miner entries"
