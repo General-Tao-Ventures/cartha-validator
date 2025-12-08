@@ -32,12 +32,51 @@ class ValidatorSettings(BaseModel):
         default_factory=list,
         description="List of validator hotkey SS58 addresses allowed to query verified miners. Empty list means all validators are allowed.",
     )
+    # Timing and sync configuration
+    metagraph_sync_interval: int = Field(
+        default=360,
+        description="Sync metagraph every N blocks (default: 360 blocks)",
+    )
+    default_tempo: int = Field(
+        default=360,
+        description="Default Bittensor epoch length (tempo) in blocks if not available from metagraph (default: 360 blocks)",
+    )
+    epoch_length_blocks: int = Field(
+        default=360,
+        description="Fallback epoch length in blocks for cooldown checks (default: 360 blocks)",
+    )
+    # Network configuration
+    testnet_netuid: int = Field(
+        default=78,
+        description="NetUID for testnet subnet (default: 78)",
+    )
+    # HTTP and polling configuration
+    timeout: float = Field(
+        default=15.0,
+        description="HTTP timeout when calling the verifier in seconds (default: 15.0)",
+    )
+    poll_interval: int = Field(
+        default=300,
+        description="Polling interval in seconds when running continuously (default: 300 = 5 minutes)",
+    )
+    # Logging configuration
+    log_dir: str = Field(
+        default="validator_logs",
+        description="Directory to save epoch weight logs (default: validator_logs)",
+    )
 
 
 DEFAULT_SETTINGS = ValidatorSettings(
     rpc_urls={31337: "http://localhost:8545"},
     pool_weights={"default": 1.0},
     max_lock_days=365,
+    metagraph_sync_interval=360,
+    default_tempo=360,
+    epoch_length_blocks=360,
+    testnet_netuid=78,
+    timeout=15.0,
+    poll_interval=300,
+    log_dir="validator_logs",
 )
 
 
@@ -76,8 +115,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--timeout",
         type=float,
-        default=15.0,
-        help="HTTP timeout when calling the verifier.",
+        default=DEFAULT_SETTINGS.timeout,
+        help=f"HTTP timeout when calling the verifier (default: {DEFAULT_SETTINGS.timeout} seconds).",
     )
     parser.add_argument(
         "--dry-run",
@@ -97,14 +136,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--poll-interval",
         type=int,
-        default=300,
-        help="Polling interval in seconds when running continuously (default: 300 = 5 minutes).",
+        default=DEFAULT_SETTINGS.poll_interval,
+        help=f"Polling interval in seconds when running continuously (default: {DEFAULT_SETTINGS.poll_interval} = {DEFAULT_SETTINGS.poll_interval // 60} minutes).",
     )
     parser.add_argument(
         "--log-dir",
         type=str,
-        default="validator_logs",
-        help="Directory to save epoch weight logs (default: validator_logs).",
+        default=DEFAULT_SETTINGS.log_dir,
+        help=f"Directory to save epoch weight logs (default: {DEFAULT_SETTINGS.log_dir}).",
     )
     # Add bittensor subtensor, wallet, and logging args (like template does)
     bt.subtensor.add_args(parser)

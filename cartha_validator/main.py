@@ -95,7 +95,13 @@ def main() -> None:
     )
 
     settings = DEFAULT_SETTINGS.model_copy(
-        update={"verifier_url": args.verifier_url, "netuid": args.netuid},
+        update={
+            "verifier_url": args.verifier_url,
+            "netuid": args.netuid,
+            "timeout": args.timeout,
+            "poll_interval": args.poll_interval,
+            "log_dir": args.log_dir,
+        },
     )
 
     if args.run_once:
@@ -129,7 +135,7 @@ def main() -> None:
 
         step = 0
         last_metagraph_sync = 0
-        metagraph_sync_interval = 100  # Sync metagraph every 100 blocks
+        metagraph_sync_interval = settings.metagraph_sync_interval
         last_weight_publish_block = 0
 
         current_block = subtensor.get_current_block()
@@ -141,8 +147,8 @@ def main() -> None:
         # Get Bittensor epoch length (tempo) from metagraph
         metagraph.sync(subtensor=subtensor)
         bittensor_epoch_length = getattr(
-            metagraph, "tempo", 360
-        )  # Default to 360 if not available
+            metagraph, "tempo", settings.default_tempo
+        )  # Default to settings.default_tempo if not available
         bt.logging.info(
             f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_GEAR} Bittensor epoch length (tempo):{ANSI_RESET} "
             f"{ANSI_BOLD}{bittensor_epoch_length}{ANSI_RESET} blocks"
@@ -160,7 +166,7 @@ def main() -> None:
                     metagraph.sync(subtensor=subtensor)
                     last_metagraph_sync = current_block
                     # Update tempo in case it changed
-                    new_tempo = getattr(metagraph, "tempo", bittensor_epoch_length)
+                    new_tempo = getattr(metagraph, "tempo", settings.default_tempo)
                     if new_tempo != bittensor_epoch_length:
                         bt.logging.info(
                             f"{ANSI_BOLD}{ANSI_YELLOW} Tempo changed:{ANSI_RESET} "

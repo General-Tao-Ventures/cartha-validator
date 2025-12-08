@@ -44,7 +44,7 @@ def run_epoch(
     epoch_version: str,
     settings: ValidatorSettings,
     *,
-    timeout: float = 15.0,
+    timeout: float | None = None,
     dry_run: bool = False,
     replay_fn: ReplayFn = replay_owner,
     publish_fn: PublishFn = publish,
@@ -62,7 +62,7 @@ def run_epoch(
         verifier_url: Base URL of the verifier service
         epoch_version: Epoch version identifier (ISO8601 format)
         settings: Validator settings
-        timeout: HTTP timeout for verifier requests
+        timeout: HTTP timeout for verifier requests (defaults to settings.timeout if None)
         dry_run: If True, don't publish weights
         replay_fn: Function to replay on-chain events
         publish_fn: Function to publish weights
@@ -77,6 +77,9 @@ def run_epoch(
     Returns:
         Dictionary with scores, weights, ranking, and summary
     """
+    # Use settings.timeout if timeout not provided
+    if timeout is None:
+        timeout = settings.timeout
     bt.logging.info(
         f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Starting validator run{ANSI_RESET} "
         f"for epoch {ANSI_BOLD}{ANSI_MAGENTA}{epoch_version}{ANSI_RESET} "
@@ -93,7 +96,7 @@ def run_epoch(
     if subtensor is not None and hasattr(subtensor, "network"):
         is_testnet = subtensor.network == "test"
     elif metagraph is not None and hasattr(metagraph, "netuid"):
-        is_testnet = metagraph.netuid == 78  # Testnet subnet UID
+        is_testnet = metagraph.netuid == settings.testnet_netuid
     
     bt.logging.info(
         f"{ANSI_BOLD}{ANSI_CYAN}[VALIDATOR]{ANSI_RESET} "
@@ -286,7 +289,7 @@ def run_epoch(
 
     # Save detailed ranking to log file
     log_dir_str = (
-        getattr(args, "log_dir", "validator_logs") if args else "validator_logs"
+        getattr(args, "log_dir", settings.log_dir) if args else settings.log_dir
     )
     log_dir = Path(log_dir_str)
     log_dir.mkdir(parents=True, exist_ok=True)
