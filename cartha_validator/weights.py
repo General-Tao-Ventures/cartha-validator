@@ -25,34 +25,6 @@ from .logging import (
 )
 
 
-def _query_weight_versions(subtensor: Any, netuid: int) -> int | None:
-    """Query the weight_versions hyperparameter from the subnet.
-    
-    This is the minimum required version that validators must meet.
-    Returns None if the query fails.
-    """
-    try:
-        # Try get_hyperparameter method first (synchronous)
-        if hasattr(subtensor, "get_hyperparameter"):
-            weight_versions = subtensor.get_hyperparameter("WeightVersions", netuid=netuid)
-            if weight_versions is not None:
-                return int(weight_versions)
-        
-        # Fallback to query_subtensor
-        response = subtensor.query_subtensor("WeightVersions", params=[netuid])
-        value = getattr(response, "value", response)
-        if isinstance(value, int):
-            return value
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            bt.logging.warning("Unexpected WeightVersions response: %r", value)
-            return None
-    except Exception as exc:  # pragma: no cover - network failure
-        bt.logging.warning("Failed to query WeightVersions hyperparameter: %s", exc)
-        return None
-
-
 def _normalize(scores: Mapping[int, float]) -> dict[int, float]:
     """Normalize scores into weights that sum to 1 and clamp negatives."""
     positive = {uid: max(0.0, float(score)) for uid, score in scores.items()}
@@ -132,40 +104,13 @@ def publish(
             # Return normalized weights even when skipping, so logging is accurate
             return weights
 
-    # Query the subnet's weight_versions hyperparameter (minimum required version)
-    required_version = _query_weight_versions(subtensor, settings.netuid)
-    if required_version is not None:
-        bt.logging.info(
-            f"{ANSI_BOLD}{ANSI_CYAN}Version check:{ANSI_RESET} "
-            f"validator version {ANSI_BOLD}{__version__}{ANSI_RESET} "
-            f"(spec_version={ANSI_BOLD}{__spec_version__}{ANSI_RESET}) "
-            f"vs subnet requirement {ANSI_BOLD}{required_version}{ANSI_RESET}"
-        )
-        if __spec_version__ < required_version:
-            error_msg = (
-                f"{ANSI_BOLD}{ANSI_RED}{EMOJI_ERROR} Version mismatch:{ANSI_RESET} "
-                f"Validator version {ANSI_BOLD}{__version__}{ANSI_RESET} "
-                f"(spec_version={ANSI_BOLD}{__spec_version__}{ANSI_RESET}) "
-                f"is below subnet requirement {ANSI_BOLD}{required_version}{ANSI_RESET}. "
-                f"{ANSI_DIM}Please update the validator code.{ANSI_RESET}"
-            )
-            bt.logging.error(error_msg)
-            raise RuntimeError(
-                f"Validator version {__version__} (spec_version={__spec_version__}) "
-                f"is below subnet requirement {required_version}"
-            )
-        bt.logging.info(
-            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Version check passed{ANSI_RESET} "
-            f"{ANSI_DIM}({__spec_version__} >= {required_version}){ANSI_RESET}"
-        )
-    else:
-        bt.logging.warning(
-            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Could not query WeightVersions hyperparameter{ANSI_RESET}. "
-            f"{ANSI_DIM}Proceeding with validator version {__version__} (spec_version={__spec_version__}){ANSI_RESET}"
-        )
-
-    # Use spec_version as the version_key (like logicnet)
+    # Use spec_version as the version_key (Bittensor chain will automatically reject if version is too low)
     version_key = __spec_version__
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}Validator version:{ANSI_RESET} "
+        f"{ANSI_BOLD}{__version__}{ANSI_RESET} "
+        f"{ANSI_DIM}(version_key={version_key}){ANSI_RESET}"
+    )
 
     success, message = subtensor.set_weights(
         wallet=wallet,

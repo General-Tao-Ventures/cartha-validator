@@ -9,7 +9,8 @@ import pytest
 
 from cartha_validator.config import DEFAULT_SETTINGS
 from cartha_validator.scoring import score_entry
-from cartha_validator.weights import _normalize, _version_key, publish
+from cartha_validator import __spec_version__
+from cartha_validator.weights import _normalize, publish
 
 
 class DummySubtensor:
@@ -106,7 +107,8 @@ def test_publish_normalizes_and_calls_subtensor() -> None:
     assert call["netuid"] == 99
     assert call["uids"] == [1, 10]
     assert call["weights"] == [pytest.approx(0.25), pytest.approx(0.75)]
-    assert call["version_key"] == subtensor.version_key
+    # Should use __spec_version__ directly (Bittensor chain will enforce version requirements)
+    assert call["version_key"] == __spec_version__
 
 
 def test_publish_raises_on_failure() -> None:
@@ -122,12 +124,9 @@ def test_publish_raises_on_failure() -> None:
             force=False,
         )
 
-def test_publish_falls_back_to_hash_when_query_fails() -> None:
-    class NoQuerySubtensor(DummySubtensor):
-        def query_subtensor(self, key: str, params: list[Any]):
-            raise RuntimeError("unavailable")
-
-    subtensor = NoQuerySubtensor()
+def test_publish_uses_spec_version() -> None:
+    """Test that publish uses __spec_version__ as version_key."""
+    subtensor = DummySubtensor()
     wallet = DummyWallet()
     epoch_version = "2024-11-01T00:00:00Z"
     settings = DEFAULT_SETTINGS
@@ -141,7 +140,8 @@ def test_publish_falls_back_to_hash_when_query_fails() -> None:
     )
     assert weights[0] == 1.0
     call = subtensor.calls[0]
-    assert call["version_key"] == _version_key(epoch_version)
+    # Should use __spec_version__ directly (Bittensor chain will enforce version requirements)
+    assert call["version_key"] == __spec_version__
 
 
 def test_multi_wallet_ranking_outputs_json(capfd) -> None:

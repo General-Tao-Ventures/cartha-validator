@@ -88,9 +88,20 @@ def run_epoch(
         wallet = bt.wallet()
     validator_hotkey = wallet.hotkey.ss58_address
     
+    # Detect if we're on testnet (for demo mode detection)
+    is_testnet = False
+    if subtensor is not None and hasattr(subtensor, "network"):
+        is_testnet = subtensor.network == "test"
+    elif metagraph is not None and hasattr(metagraph, "netuid"):
+        is_testnet = metagraph.netuid == 78  # Testnet subnet UID
+    
     bt.logging.info(
         f"{ANSI_BOLD}{ANSI_CYAN}[VALIDATOR]{ANSI_RESET} "
         f"Validator hotkey: {ANSI_BOLD}{validator_hotkey}{ANSI_RESET}"
+    )
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
+        f"Checking validator whitelist status with verifier..."
     )
 
     try:
@@ -123,6 +134,25 @@ def run_epoch(
                 bt.logging.warning(
                     f"{ANSI_BOLD}{ANSI_YELLOW}[VERIFIER WARNING]{ANSI_RESET} {warning_header}"
                 )
+                # If on testnet and we got a warning, it likely means whitelist is empty
+                if is_testnet:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
+                        f"{ANSI_DIM}Testnet mode: Whitelist is empty, allowing all validators. "
+                        f"If this was mainnet, your validator would have been rejected.{ANSI_RESET}"
+                    )
+            else:
+                # Success without warning - validator is whitelisted (or whitelist is empty on mainnet)
+                if is_testnet:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_GREEN}[WHITELIST CHECK]{ANSI_RESET} "
+                        f"Validator whitelist check passed (testnet mode)"
+                    )
+                else:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_GREEN}[WHITELIST CHECK]{ANSI_RESET} "
+                        f"Validator whitelist check passed - hotkey is whitelisted"
+                    )
             
             bt.logging.info(
                 f"{ANSI_BOLD}{ANSI_GREEN}[VERIFIER REQUEST]{ANSI_RESET} "
@@ -141,9 +171,18 @@ def run_epoch(
                 f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED BY VERIFIER:{ANSI_RESET}\n"
                 f"  The verifier has rejected your request. This usually means your hotkey is not whitelisted.\n"
                 f"  {ANSI_BOLD}Your hotkey:{ANSI_RESET} {validator_hotkey}\n"
-                f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
-                f"  {ANSI_DIM}Response: {error_detail}{ANSI_RESET}"
             )
+            if is_testnet:
+                bt.logging.error(
+                    f"  {ANSI_BOLD}{ANSI_YELLOW}Note:{ANSI_RESET} You are on testnet, but the verifier rejected you.\n"
+                    f"  This suggests the whitelist is configured and your hotkey is not in it.\n"
+                    f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
+                )
+            else:
+                bt.logging.error(
+                    f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
+                )
+            bt.logging.error(f"  {ANSI_DIM}Response: {error_detail}{ANSI_RESET}")
         raise RuntimeError(
             f"Verifier HTTP error {exc.response.status_code}: {error_detail[:200]}"
         ) from exc
