@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping
 from typing import Any
 
@@ -33,6 +34,68 @@ def _normalize(scores: Mapping[int, float]) -> dict[int, float]:
         bt.logging.warning("Total score non-positive; emitting zeroed weights.")
         return {uid: 0.0 for uid in positive}
     return {uid: value / total for uid, value in positive.items()}
+
+
+class SetWeightsTimeoutError(Exception):
+    """Raised when set_weights operation times out."""
+    pass
+
+
+def _set_weights_with_timeout(
+    subtensor: Any,
+    wallet: Any,
+    netuid: int,
+    uids: list[int],
+    weights: list[float],
+    version_key: int,
+    timeout: float,
+) -> tuple[bool, str]:
+    """Set weights with a timeout using threading.
+    
+    Args:
+        subtensor: Bittensor subtensor instance
+        wallet: Bittensor wallet instance
+        netuid: Subnet netuid
+        uids: List of UIDs
+        weights: List of weights
+        version_key: Version key for weights
+        timeout: Timeout in seconds
+        
+    Returns:
+        Tuple of (success, message)
+        
+    Raises:
+        SetWeightsTimeoutError: If operation exceeds timeout
+    """
+    result = [None]
+    exception = [None]
+    
+    def set_weights():
+        try:
+            result[0] = subtensor.set_weights(
+                wallet=wallet,
+                netuid=netuid,
+                uids=uids,
+                weights=weights,
+                version_key=version_key,
+                wait_for_inclusion=False,
+                wait_for_finalization=False,
+            )
+        except Exception as e:
+            exception[0] = e
+    
+    thread = threading.Thread(target=set_weights, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout)
+    
+    if thread.is_alive():
+        # Thread is still running, operation timed out
+        raise SetWeightsTimeoutError(f"set_weights operation timed out after {timeout} seconds")
+    
+    if exception[0]:
+        raise exception[0]
+    
+    return result[0]
 
 
 def publish(
@@ -112,15 +175,28 @@ def publish(
         f"{ANSI_DIM}(version_key={version_key}){ANSI_RESET}"
     )
 
-    success, message = subtensor.set_weights(
-        wallet=wallet,
-        netuid=settings.netuid,
-        uids=uids,
-        weights=values,
-        version_key=version_key,
-        wait_for_inclusion=False,
-        wait_for_finalization=False,
-    )
+    # Set weights with timeout
+    try:
+        success, message = _set_weights_with_timeout(
+            subtensor=subtensor,
+            wallet=wallet,
+            netuid=settings.netuid,
+            uids=uids,
+            weights=values,
+            version_key=version_key,
+            timeout=settings.set_weights_timeout,
+        )
+    except SetWeightsTimeoutError as e:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}{EMOJI_ERROR} Weight setting timed out:{ANSI_RESET} {e}"
+        )
+        raise RuntimeError(f"set_weights timed out after {settings.set_weights_timeout} seconds") from e
+    except Exception as e:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}{EMOJI_ERROR} Unexpected error during set_weights:{ANSI_RESET} {e}"
+        )
+        raise RuntimeError(f"set_weights failed with exception: {e}") from e
+    
     if not success:
         # Handle "too soon" error gracefully - this is expected during cooldown periods
         if "too soon" in str(message).lower() or "cooldown" in str(message).lower():

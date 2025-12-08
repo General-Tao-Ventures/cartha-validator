@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -39,6 +40,18 @@ def _parse_args():
 def _epoch_version(value: str | None) -> str:
     """Get epoch version (delegates to config.epoch_version)."""
     return epoch_version(value)
+
+
+def _shutdown_handler():
+    """Cleanup handler called on exit."""
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}Shutting down validator...{ANSI_RESET}"
+    )
+    # Add any cleanup logic here if needed
+
+
+# Register shutdown handler
+atexit.register(_shutdown_handler)
 
 
 def main() -> None:

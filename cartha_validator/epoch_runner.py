@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -37,6 +38,29 @@ from .weights import publish
 
 # Re-export types for convenience
 __all__ = ["run_epoch"]
+
+
+def _format_http_error(exc: httpx.HTTPStatusError) -> str:
+    """Format HTTP error response for better readability.
+    
+    Args:
+        exc: HTTPStatusError exception
+        
+    Returns:
+        Formatted error message string
+    """
+    try:
+        response_json = exc.response.json()
+        # If response is a simple dict with "detail" key, return just the detail
+        if isinstance(response_json, dict) and len(response_json) == 1 and "detail" in response_json:
+            if isinstance(response_json["detail"], str):
+                return textwrap.indent(response_json["detail"], "  ")
+        # Otherwise, return formatted JSON
+        return textwrap.indent(json.dumps(response_json, indent=2), "  ")
+    except Exception:
+        # Response is not JSON, return text (truncated)
+        response_text = exc.response.text[:500] if exc.response.text else 'No response body'
+        return textwrap.indent(response_text, "  ")
 
 
 def run_epoch(
@@ -162,13 +186,14 @@ def run_epoch(
                 f"Successfully fetched {len(entries)} verified miner entries"
             )
     except httpx.HTTPStatusError as exc:
-        error_detail = exc.response.text[:500] if exc.response.text else 'No response body'
+        # Format HTTP error for better readability
+        error_detail = _format_http_error(exc)
         bt.logging.error(
             f"{ANSI_BOLD}{ANSI_RED}[VERIFIER HTTP ERROR]{ANSI_RESET} "
-            f"Verifier returned error status: {exc.response.status_code}"
+            f"HTTP {exc.response.status_code} {exc.response.reason_phrase} during GET {exc.request.url}"
         )
-        bt.logging.error(f"URL: {exc.request.url}")
-        bt.logging.error(f"Response: {error_detail}")
+        if error_detail:
+            bt.logging.error(f"Response:\n{ANSI_DIM}{error_detail}{ANSI_RESET}")
         if exc.response.status_code == 403:
             bt.logging.error(
                 f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED BY VERIFIER:{ANSI_RESET}\n"

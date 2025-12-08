@@ -34,8 +34,8 @@ class ValidatorSettings(BaseModel):
     )
     # Timing and sync configuration
     metagraph_sync_interval: int = Field(
-        default=360,
-        description="Sync metagraph every N blocks (default: 360 blocks)",
+        default=100,
+        description="Sync metagraph every N blocks (default: 100 blocks, ~20 minutes)",
     )
     default_tempo: int = Field(
         default=360,
@@ -55,6 +55,10 @@ class ValidatorSettings(BaseModel):
         default=15.0,
         description="HTTP timeout when calling the verifier in seconds (default: 15.0)",
     )
+    set_weights_timeout: float = Field(
+        default=90.0,
+        description="Timeout for set_weights operation in seconds (default: 90.0)",
+    )
     poll_interval: int = Field(
         default=300,
         description="Polling interval in seconds when running continuously (default: 300 = 5 minutes)",
@@ -70,11 +74,12 @@ DEFAULT_SETTINGS = ValidatorSettings(
     rpc_urls={31337: "http://localhost:8545"},
     pool_weights={"default": 1.0},
     max_lock_days=365,
-    metagraph_sync_interval=360,
+    metagraph_sync_interval=100,
     default_tempo=360,
     epoch_length_blocks=360,
     testnet_netuid=78,
     timeout=15.0,
+    set_weights_timeout=90.0,
     poll_interval=300,
     log_dir="validator_logs",
 )
