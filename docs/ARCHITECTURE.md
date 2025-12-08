@@ -24,7 +24,7 @@ The validator is a lightweight daemon that operates on a **weekly epoch cycle**.
 | `cartha_validator/indexer.py` | Event replay helpers for Model‑1 vault semantics (lock created/updated/released). |
 | `cartha_validator/scoring.py` | Liquidity scoring with pool weights, lock duration boost, and temperature curve (`1 - exp(-raw/temperature)`). |
 | `cartha_validator/weights.py` | Normalises scores, derives/queries `version_key`, wraps `set_weights` with cooldown checks. |
-| `cartha_validator/config.py` | Typed settings (verifier URL, RPCs, pool weights, max lock days, epoch schedule). |
+| `cartha_validator/config.py` | Typed settings (verifier URL, validator whitelist, pool weights, max lock days, epoch schedule). |
 | `cartha_validator/epoch.py` | Weekly epoch boundary helpers (Friday 00:00 UTC → Thursday 23:59 UTC). |
 | `cartha_validator/logging.py` | ANSI color codes and emoji helpers for rich terminal output. |
 | `cartha_validator/register.py` | Registration helpers (ensure hotkey is registered). |
@@ -36,23 +36,24 @@ The validator is a lightweight daemon that operates on a **weekly epoch cycle**.
 The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:59 UTC):
 
 1. **Weekly Epoch Detection** – Detects current weekly epoch start (Friday 00:00 UTC boundary)
-2. **Fetch Frozen Snapshot** – `GET /v1/verified-miners?epoch=<version>` from the verifier. This list is
+2. **Validator Whitelist Check** – Verifies that the validator hotkey is in the whitelist before querying
+3. **Fetch Frozen Snapshot** – `GET /v1/verified-miners?epoch=<version>` from the verifier. This list is
    frozen at Friday 00:00 UTC and contains `(hotkey, slot_uid, chain_id, vault, pool_id, amount, expires_at, …)`.
    - **Epoch Fallback**: If requested epoch isn't frozen yet, verifier returns last frozen epoch
-3. **Resolve UIDs** – For each hotkey, the validator asks the local subtensor for its UID on netuid 35
-4. **Replay/Aggregate Liquidity** – 
-   - **Production (mainnet)**: Replays vault events using `indexer.replay_owner` for each entry
-   - **Testnet/Dev**: `--use-verified-amounts` flag skips RPC and uses verifier's stored `amount`
+   - **Note**: The verifier handles all on-chain validation and RPC queries
+4. **Resolve UIDs** – For each hotkey, the validator asks the local subtensor for its UID on netuid 35
+5. **Aggregate Liquidity** – 
+   - Uses verifier-supplied `amount` field (verifier handles all on-chain validation)
    - Positions are aggregated per UID across all pools
    - **Expired Pool Filtering**: Pools with `expires_at` in the past are excluded
-5. **Score Miners** – Pools are aggregated per UID. The boost formula is:
+6. **Score Miners** – Pools are aggregated per UID. The boost formula is:
    ```
    raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
    score = 1 - exp(-raw / score_temperature)    # score_temperature defaults to 1000
    ```
-6. **Normalise Weights** – `weight = score / Σ(score)`; weights sum to 1
-7. **Cache Weights** – Weights are cached for the entire weekly epoch
-8. **Publish** – `weights.publish()` queries the current `WeightsVersionKey`, then calls
+7. **Normalise Weights** – `weight = score / Σ(score)`; weights sum to 1
+8. **Cache Weights** – Weights are cached for the entire weekly epoch
+9. **Publish** – `weights.publish()` checks version requirements and calls
    `subtensor.set_weights()` with the UID vector, values, and version
    - **Cooldown Check**: Skips if not enough blocks have passed since last update (unless `force=True`)
    - **Bittensor Epoch**: Publishes cached weights every Bittensor epoch (tempo blocks) throughout the week
@@ -122,9 +123,9 @@ additional instrumentation.
 
 ## Security Features
 
-- **Mainnet Enforcement**: `--use-verified-amounts` is forbidden on mainnet (netuid 35, network "finney")
+- **Validator Whitelist**: Only whitelisted validators can query verified miners. Non-whitelisted validators are rejected with a clear error message.
 - **Registration Check**: Validates hotkey is registered before running
-- **RPC Validation**: Warns about misconfigured RPC endpoints (e.g., localhost on mainnet)
+- **Version Control**: Validators must meet the minimum version requirement set on-chain (`weight_versions` hyperparameter)
 - **Expired Pool Filtering**: Automatically excludes pools with `expires_at` in the past
 - **Epoch Freezing**: Uses verifier's epoch-frozen snapshots to prevent manipulation
-- **Independent Verification**: Replays events directly from blockchain on mainnet
+- **Verifier-Based Validation**: The verifier handles all on-chain validation and RPC queries, ensuring consistent and secure verification

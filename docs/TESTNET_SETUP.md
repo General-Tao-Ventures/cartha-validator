@@ -8,7 +8,7 @@ This guide will help you set up and run a Cartha validator on the public testnet
 - [`uv`](https://github.com/astral-sh/uv) package manager (or `pip`)
 - Bittensor wallet with registered validator hotkey
 - Access to the testnet verifier URL
-- (Optional) Access to EVM RPC endpoints for full replay
+- **Validator Whitelist**: Your validator hotkey must be whitelisted by the subnet owner
 
 ### Installing `uv`
 
@@ -199,40 +199,48 @@ Key options:
 - `--epoch`: Override epoch version (defaults to current Friday 00:00 UTC)
 - `--timeout`: HTTP timeout for verifier calls (default: 15s)
 - `--dry-run`: Skip `set_weights`, print computed vector
-- `--use-verified-amounts`: Use verifier amounts directly (bypass RPC replay)
-  - **⚠️ SECURITY**: This flag is **FORBIDDEN on mainnet** (netuid 35, network "finney")
-  - **Required for testnet**: Use this flag when RPC endpoints are not available
-  - **Mainnet enforcement**: The validator will refuse to run with this flag on mainnet
 - `--logging.debug`: Enable debug logging (enabled by default, use `--logging.debug=False` to disable)
 
 ### Configuration File
 
 Edit `cartha_validator/config.py` to customize:
 
-- RPC endpoints per chain
+- Validator whitelist (list of allowed validator hotkey SS58 addresses)
 - Pool weights
 - Max lock days
 - Score temperature
 - Epoch schedule
 
+**Note**: The verifier handles all on-chain validation and RPC queries. Validators do not need to configure RPC endpoints.
+
 ## Testnet-Specific Notes
 
-### Demo Mode
+### Validator Whitelist
 
-The testnet runs in **demo mode**, which means:
+**Important**: Only whitelisted validators can query verified miners. If your validator is not whitelisted, you will see an error message directing you to contact the subnet owner.
 
-- ✅ Verifier uses mock vault data
-- ✅ On-chain validation is bypassed
-- ✅ `--use-verified-amounts` is recommended
-- ⚠️ RPC endpoints may not be available
+To configure the whitelist, edit `cartha_validator/config.py`:
+
+```python
+DEFAULT_SETTINGS = ValidatorSettings(
+    validator_whitelist=[
+        "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",  # Example hotkey
+        # Add more whitelisted hotkeys here
+    ],
+    pool_weights={"default": 1.0},
+    max_lock_days=365,
+)
+```
+
+**Note**: An empty whitelist (`[]`) means all validators are allowed. This is useful for testing but should be configured properly for production.
 
 ### Recommended Testnet Configuration
 
 ```python
 # In config.py or via environment
-rpc_urls = {
-    31337: "http://localhost:8545"  # Mock/testnet RPC
-}
+validator_whitelist = [
+    "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",  # Your validator hotkey
+]
 pool_weights = {"default": 1.0}
 max_lock_days = 365
 score_temperature = 1000.0
@@ -359,16 +367,16 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners"
 ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 ```
 
-### "RPC endpoint error" or "Connection refused"
+### "Validator rejected" or "not whitelisted"
 
-**Problem**: Validator can't connect to RPC endpoints (e.g., `Connection refused` to `localhost:8545`)
+**Problem**: Validator hotkey is not in the whitelist
 
 **Solution**:
 
-- **For testnet**: You **must** use `--use-verified-amounts` flag. RPC endpoints are not available in testnet demo mode.
-- The validator will automatically show a helpful tip when RPC connection fails, suggesting to use `--use-verified-amounts`
-- For production/mainnet: Verify RPC URLs are configured correctly in `config.py` or via environment variables
-- Check that your RPC endpoint is running and accessible if you need full replay mode
+- Contact the subnet owner to add your validator hotkey to the whitelist
+- The error message will show your hotkey address - provide this to the subnet owner
+- Once whitelisted, update `cartha_validator/config.py` with the whitelist (or leave empty `[]` if subnet owner manages it server-side)
+- Restart the validator after whitelist is updated
 
 ### "No verified miners found"
 

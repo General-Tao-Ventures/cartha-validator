@@ -28,6 +28,10 @@ class ValidatorSettings(BaseModel):
     epoch_weekday: int = 4  # Friday
     epoch_time: time = time(hour=0, minute=0)
     epoch_timezone: str = "UTC"
+    validator_whitelist: list[str] = Field(
+        default_factory=list,
+        description="List of validator hotkey SS58 addresses allowed to query verified miners. Empty list means all validators are allowed.",
+    )
 
 
 DEFAULT_SETTINGS = ValidatorSettings(

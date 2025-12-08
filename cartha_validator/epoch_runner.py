@@ -83,57 +83,29 @@ def run_epoch(
         f"{ANSI_DIM}(dry_run={dry_run}){ANSI_RESET}"
     )
 
-    # SECURITY: Detect mainnet and enforce RPC validation (defense in depth)
-    is_mainnet = False
-    if subtensor is not None:
-        network_name = getattr(subtensor, "network", None)
-        if network_name == "finney":
-            is_mainnet = True
-    if metagraph is not None and hasattr(metagraph, "netuid"):
-        if metagraph.netuid == 35:
-            is_mainnet = True
-    if settings.netuid == 35:
-        is_mainnet = True
-
-    # SECURITY: Block --use-verified-amounts on mainnet (defense in depth)
-    if is_mainnet and use_verified_amounts:
-        bt.logging.error(
-            f"{ANSI_BOLD}{ANSI_RED}🚨 SECURITY ERROR:{ANSI_RESET} "
-            f"--use-verified-amounts is FORBIDDEN on mainnet!"
-        )
-        raise RuntimeError(
-            "Security violation: --use-verified-amounts cannot be used on mainnet. "
-            "RPC validation is required for production security."
-        )
-
-    # Check if we're in testnet mode and warn about RPC requirements
-    if not use_verified_amounts:
-        # Check if RPC URLs are configured for the chains we might encounter
-        # Common testnet chain ID is 31337
-        testnet_chain_id = 31337
-        if testnet_chain_id in settings.rpc_urls:
-            rpc_url = settings.rpc_urls[testnet_chain_id]
-            # Check if it's localhost (common testnet default that won't work)
-            if "localhost" in rpc_url or "127.0.0.1" in rpc_url:
-                bt.logging.warning(
-                    f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  RPC Configuration Warning:{ANSI_RESET}\n"
-                    f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
-                    f"and have a localhost RPC configured ({rpc_url}).\n"
-                    f"  {ANSI_DIM}If you're on testnet, RPC endpoints are not available.{ANSI_RESET}\n"
-                    f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
-                    f"to bypass RPC replay and use verifier-supplied amounts.\n"
-                    f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
-                )
-        elif not settings.rpc_urls:
-            # No RPC URLs configured at all
-            bt.logging.warning(
-                f"{ANSI_BOLD}{ANSI_YELLOW}⚠️  No RPC Configuration:{ANSI_RESET}\n"
-                f"  You're running without {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
-                f"but no RPC URLs are configured.\n"
-                f"  {ANSI_BOLD}💡 Recommendation:{ANSI_RESET} Use {ANSI_BOLD}--use-verified-amounts{ANSI_RESET} "
-                f"to bypass RPC replay, or configure RPC URLs in config.py.\n"
-                f"  {ANSI_DIM}Continuing with RPC replay attempt...{ANSI_RESET}"
+    # Check validator whitelist before querying verifier
+    if wallet is None:
+        wallet = bt.wallet()
+    validator_hotkey = wallet.hotkey.ss58_address
+    
+    # If whitelist is configured and not empty, check if validator is whitelisted
+    if settings.validator_whitelist:
+        if validator_hotkey not in settings.validator_whitelist:
+            error_msg = (
+                f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED:{ANSI_RESET}\n"
+                f"  Validator hotkey {ANSI_BOLD}{validator_hotkey}{ANSI_RESET} is not in the whitelist.\n"
+                f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
+                f"  {ANSI_DIM}Only whitelisted validators are allowed to query verified miners.{ANSI_RESET}"
             )
+            bt.logging.error(error_msg)
+            raise RuntimeError(
+                f"Validator {validator_hotkey} is not whitelisted. "
+                "Contact the subnet owner to be added to the validator whitelist."
+            )
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Validator whitelist check passed{ANSI_RESET} "
+            f"{ANSI_DIM}(hotkey: {validator_hotkey}){ANSI_RESET}"
+        )
 
     try:
         with httpx.Client(base_url=verifier_url, timeout=timeout) as client:

@@ -7,8 +7,8 @@
 Cartha Validator provides a complete, production-ready solution for running a validator on the Cartha subnet:
 
 - **📊 Intelligent Scoring** - Score miners based on locked USDC amounts, lock duration, pool weights, and expired pool filtering
-- **⛓️ On-Chain Validation** - Replay vault events from the blockchain to verify positions independently (required on mainnet)
 - **🔄 Weekly Epoch Management** - Automatic weekly epoch detection (Friday 00:00 UTC) with daily expiry checks
+- **🔒 Validator Whitelist** - Only whitelisted validators can query verified miners (contact subnet owner to be added)
 
 ## Quick Start
 
@@ -36,16 +36,16 @@ uv run python -m cartha_validator.main \
 - [`uv`](https://github.com/astral-sh/uv) for dependency management
 - Bittensor wallet (coldkey and hotkey)
 - Access to Cartha verifier instance
-- EVM RPC endpoints for on-chain replay (required for mainnet)
+- **Validator Whitelist**: Your validator hotkey must be whitelisted by the subnet owner
 
 ## How It Works
 
 The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursday 23:59 UTC):
 
 1. **Weekly Epoch Detection** - Detects the current weekly epoch (Friday 00:00 UTC boundary)
-2. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier for the current weekly epoch
-3. **Daily Expiry Checks** - Performs daily checks during the week to filter out expired pools
-4. **Replay Positions** - For each miner, replays vault events from the blockchain to reconstruct their USDC positions (or uses verifier-supplied amounts in testnet mode)
+2. **Validator Whitelist Check** - Verifies that the validator hotkey is whitelisted (required to query verified miners)
+3. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier for the current weekly epoch
+4. **Daily Expiry Checks** - Performs daily checks during the week to filter out expired pools
 5. **Score Liquidity** - Calculates scores based on:
    - Locked USDC amounts (6 decimals)
    - Lock duration (with Model-1 boost)
@@ -53,6 +53,8 @@ The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursda
    - Temperature curve (default: 1000)
    - Expired pool filtering (pools with `expires_at` in the past are excluded)
 6. **Cache & Publish** - Normalizes scores to weights, caches them for the week, and publishes via `set_weights` to Bittensor every Bittensor epoch (tempo blocks)
+
+**Note**: The verifier handles all on-chain validation and RPC queries. Validators do not need to configure RPC endpoints.
 
 ## Scoring Algorithm
 
@@ -86,12 +88,12 @@ This ensures fair distribution of rewards proportional to liquidity contribution
 
 Cartha Validator enforces strict security policies:
 
-- **On-Chain Validation Required** - The `--use-verified-amounts` flag is **forbidden on mainnet** (netuid 35, network "finney") to ensure all positions are verified via blockchain replay
+- **Validator Whitelist** - Only whitelisted validators can query verified miners. Non-whitelisted validators will be rejected with a clear error message directing them to contact the subnet owner.
 - **Epoch Freezing** - Uses verifier's epoch-frozen snapshots to prevent manipulation
-- **Independent Verification** - Replays events directly from the blockchain, not relying solely on verifier data
+- **Verifier-Based Validation** - The verifier handles all on-chain validation and RPC queries, ensuring consistent and secure verification
 - **Registration Validation** - Checks that the validator hotkey is registered before running
 - **Expired Pool Filtering** - Automatically filters out pools that have expired (`expires_at` in the past)
-- **RPC Configuration Warnings** - Warns about misconfigured RPC endpoints (e.g., localhost on mainnet)
+- **Version Control** - Validators must meet the minimum version requirement set on-chain
 
 ## Key Features
 
