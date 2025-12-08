@@ -88,8 +88,17 @@ def run_epoch(
         wallet = bt.wallet()
     validator_hotkey = wallet.hotkey.ss58_address
     
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
+        f"Validator hotkey: {ANSI_BOLD}{validator_hotkey}{ANSI_RESET}"
+    )
+    
     # If whitelist is configured and not empty, check if validator is whitelisted
     if settings.validator_whitelist:
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}[WHITELIST CHECK]{ANSI_RESET} "
+            f"Client-side whitelist configured with {len(settings.validator_whitelist)} entries"
+        )
         if validator_hotkey not in settings.validator_whitelist:
             error_msg = (
                 f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED:{ANSI_RESET}\n"
@@ -106,24 +115,57 @@ def run_epoch(
             f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Validator whitelist check passed{ANSI_RESET} "
             f"{ANSI_DIM}(hotkey: {validator_hotkey}){ANSI_RESET}"
         )
+    else:
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_YELLOW}[WHITELIST CHECK]{ANSI_RESET} "
+            f"Client-side whitelist not configured (empty). Server-side check will apply."
+        )
 
     try:
         with httpx.Client(base_url=verifier_url, timeout=timeout) as client:
+            # Build query parameters - always include validator_hotkey for server-side whitelist check
+            # Also include network/netuid for testnet detection on verifier side
+            params = {
+                "epoch": epoch_version,
+                "validator_hotkey": validator_hotkey,
+            }
+            # Add network/netuid if available (for testnet/mainnet detection)
+            if metagraph is not None and hasattr(metagraph, "netuid"):
+                params["netuid"] = metagraph.netuid
+            if subtensor is not None and hasattr(subtensor, "network"):
+                params["network"] = subtensor.network
+            
             bt.logging.debug(
-                f"{ANSI_DIM}Fetching verified miners from {verifier_url}/v1/verified-miners?epoch={epoch_version}{ANSI_RESET}"
+                f"{ANSI_DIM}Fetching verified miners from {verifier_url}/v1/verified-miners?epoch={epoch_version}&validator_hotkey={validator_hotkey}{ANSI_RESET}"
             )
-            response = client.get("/v1/verified-miners", params={"epoch": epoch_version})
+            bt.logging.debug(
+                f"{ANSI_DIM}Request params: {params}{ANSI_RESET}"
+            )
+            response = client.get("/v1/verified-miners", params=params)
             response.raise_for_status()
             entries = response.json()
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_GREEN}[VERIFIER REQUEST]{ANSI_RESET} "
+                f"Successfully fetched {len(entries)} verified miner entries"
+            )
     except httpx.HTTPStatusError as exc:
+        error_detail = exc.response.text[:500] if exc.response.text else 'No response body'
         bt.logging.error(
             f"{ANSI_BOLD}{ANSI_RED}[VERIFIER HTTP ERROR]{ANSI_RESET} "
             f"Verifier returned error status: {exc.response.status_code}"
         )
         bt.logging.error(f"URL: {exc.request.url}")
-        bt.logging.error(f"Response: {exc.response.text[:500] if exc.response.text else 'No response body'}")
+        bt.logging.error(f"Response: {error_detail}")
+        if exc.response.status_code == 403:
+            bt.logging.error(
+                f"{ANSI_BOLD}{ANSI_RED}🚨 VALIDATOR REJECTED BY VERIFIER:{ANSI_RESET}\n"
+                f"  The verifier has rejected your request. This usually means your hotkey is not whitelisted.\n"
+                f"  {ANSI_BOLD}Your hotkey:{ANSI_RESET} {validator_hotkey}\n"
+                f"  {ANSI_BOLD}Action Required:{ANSI_RESET} Contact the subnet owner to add your hotkey to the validator whitelist.\n"
+                f"  {ANSI_DIM}Response: {error_detail}{ANSI_RESET}"
+            )
         raise RuntimeError(
-            f"Verifier HTTP error {exc.response.status_code}: {exc.response.text[:200]}"
+            f"Verifier HTTP error {exc.response.status_code}: {error_detail[:200]}"
         ) from exc
     except httpx.RequestError as exc:
         bt.logging.error(
