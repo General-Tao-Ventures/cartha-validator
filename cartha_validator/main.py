@@ -129,7 +129,7 @@ def main() -> None:
 
         step = 0
         last_metagraph_sync = 0
-        metagraph_sync_interval = 360  # Sync metagraph every 360 blocks
+        metagraph_sync_interval = 100  # Sync metagraph every 100 blocks
         last_weight_publish_block = 0
 
         current_block = subtensor.get_current_block()
