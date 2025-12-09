@@ -8,7 +8,8 @@ This guide will help you set up and run a Cartha validator on the public testnet
 - [`uv`](https://github.com/astral-sh/uv) package manager (or `pip`)
 - Bittensor wallet with registered validator hotkey
 - Access to the testnet verifier URL
-- **Validator Whitelist**: Your validator hotkey must be whitelisted by the subnet owner
+
+**Note**: On testnet, all validators are allowed - no whitelist is required. Whitelist restrictions only apply to mainnet.
 
 ### Installing `uv`
 
@@ -89,9 +90,7 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners"
 
 ## Running the Validator
 
-### Dry Run Mode (Recommended for Testing)
-
-Run the validator without publishing weights:
+Run your validator to start scoring miners and publishing weights:
 
 ```bash
 uv run python -m cartha_validator.main \
@@ -100,55 +99,23 @@ uv run python -m cartha_validator.main \
   --subtensor.network test \
   --wallet-name <your-wallet-name> \
   --wallet-hotkey <your-hotkey-name> \
-  --dry-run \
   --use-verified-amounts
 ```
 
 This will:
 
 - Fetch verified miners from the verifier
-- Score miners using verifier-supplied amounts (no RPC replay)
-- Print the computed weights without publishing
+- Score miners using verifier-supplied amounts
+- Calculate normalized weights based on miner scores
+- Publish weights to the Bittensor subnet
 - Show detailed debug logs (enabled by default) including:
   - Per-miner scoring details
-  - Replay timing and RPC lag (if using full replay)
   - Full ranking with all miners
   - Position aggregation by pool
-- Help you verify the scoring logic
 
-**Note**: Debug logging is enabled by default. To reduce verbosity, add `--logging.debug=False`.
+**Note**: Debug logging is enabled by default. Use `--logging.debug=False` to reduce verbosity.
 
-### Full Replay Mode
-
-For full on-chain replay (requires RPC endpoints):
-
-```bash
-uv run python -m cartha_validator.main \
-  --verifier-url "${CARTHA_VERIFIER_URL}" \
-  --netuid 78 \
-  --subtensor.network test \
-  --wallet-name <your-wallet-name> \
-  --wallet-hotkey <your-hotkey-name> \
-  --dry-run
-```
-
-**⚠️ Important**: In testnet demo mode, RPC endpoints are **not available**. You **must** use the `--use-verified-amounts` flag for testnet. Without this flag, the validator will attempt to connect to RPC endpoints (default: `localhost:8545`) and fail with connection errors.
-
-### Production Mode (Publish Weights)
-
-Once you're confident, publish weights to the subnet:
-
-```bash
-uv run python -m cartha_validator.main \
-  --verifier-url "${CARTHA_VERIFIER_URL}" \
-  --netuid 78 \
-  --subtensor.network test \
-  --wallet-name <your-wallet-name> \
-  --wallet-hotkey <your-hotkey-name> \
-  --use-verified-amounts
-```
-
-**Warning**: This will publish weights to the testnet. Only do this if you're confident in your validator setup.
+**⚠️ Important**: You **must** use the `--use-verified-amounts` flag. This tells the validator to use verified miner data from the verifier instead of querying RPC endpoints directly.
 
 ## Validator Workflow
 
@@ -165,7 +132,7 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners?epoch=$(date -u +%Y-%m-%dT00:00:
 
 For each verified miner, the validator:
 
-1. (Optional) Replays on-chain events to get current positions (or uses verifier-supplied amounts with `--use-verified-amounts`)
+1. Fetches miner data from the verifier
 2. Filters out expired pools (pools with `expires_at` in the past)
 3. Calculates scores based on:
    - Locked amount
@@ -198,49 +165,33 @@ Key options:
 - `--wallet-hotkey`: Hotkey name (required)
 - `--epoch`: Override epoch version (defaults to current Friday 00:00 UTC)
 - `--timeout`: HTTP timeout for verifier calls (default: 15s)
-- `--dry-run`: Skip `set_weights`, print computed vector
 - `--logging.debug`: Enable debug logging (enabled by default, use `--logging.debug=False` to disable)
 
 ### Configuration File
 
 Edit `cartha_validator/config.py` to customize:
 
-- Validator whitelist (list of allowed validator hotkey SS58 addresses)
 - Pool weights
 - Max lock days
 - Score temperature
 - Epoch schedule
 
-**Note**: The verifier handles all on-chain validation and RPC queries. Validators do not need to configure RPC endpoints.
+**Note**: 
+- The verifier handles all on-chain validation and provides verified miner data. Validators only query the verifier and score miners - no RPC endpoints needed.
+- Validator whitelist is managed by the verifier, not configured locally in the validator.
 
 ## Testnet-Specific Notes
 
 ### Validator Whitelist
 
-**Important**: Only whitelisted validators can query verified miners. If your validator is not whitelisted, you will see an error message directing you to contact the subnet owner.
+**Testnet**: On testnet, all validators are allowed to query verified miners - no whitelist is required. You can proceed directly to running your validator.
 
-To configure the whitelist, edit `cartha_validator/config.py`:
-
-```python
-DEFAULT_SETTINGS = ValidatorSettings(
-    validator_whitelist=[
-        "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",  # Example hotkey
-        # Add more whitelisted hotkeys here
-    ],
-    pool_weights={"default": 1.0},
-    max_lock_days=365,
-)
-```
-
-**Note**: An empty whitelist (`[]`) means all validators are allowed. This is useful for testing but should be configured properly for production.
+**Mainnet**: On mainnet, validators must be whitelisted by the subnet owner. The whitelist is managed by the verifier, not configured locally in the validator. Contact the subnet owner to get your validator hotkey added to the verifier's whitelist for mainnet.
 
 ### Recommended Testnet Configuration
 
 ```python
 # In config.py or via environment
-validator_whitelist = [
-    "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",  # Your validator hotkey
-]
 pool_weights = {"default": 1.0}
 max_lock_days = 365
 score_temperature = 1000.0
@@ -264,7 +215,7 @@ The validator uses Bittensor's logging system and **debug logging is enabled by 
 
 **Logging Levels:**
 
-- **Debug** (default): Detailed information including replay timing, RPC lag, full rankings, per-miner scoring
+- **Debug** (default): Detailed information including full rankings, per-miner scoring, and position aggregation
 - **Info**: General progress and important events
 - **Warning**: Non-critical issues
 - **Error**: Critical errors
@@ -279,7 +230,7 @@ uv run python -m cartha_validator.main \
   --subtensor.network test \
   --wallet-name <wallet> \
   --wallet-hotkey <hotkey> \
-  --dry-run
+  --use-verified-amounts
 
 # Disable debug logging (show only info and above)
 uv run python -m cartha_validator.main \
@@ -289,7 +240,7 @@ uv run python -m cartha_validator.main \
   --wallet-name <wallet> \
   --wallet-hotkey <hotkey> \
   --logging.debug=False \
-  --dry-run
+  --use-verified-amounts
 
 # Explicitly enable debug (redundant since it's default, but shown for clarity)
 uv run python -m cartha_validator.main \
@@ -299,12 +250,11 @@ uv run python -m cartha_validator.main \
   --wallet-name <wallet> \
   --wallet-hotkey <hotkey> \
   --logging.debug \
-  --dry-run
+  --use-verified-amounts
 ```
 
 **What Debug Logging Shows:**
 
-- Per-miner replay timing and RPC lag
 - Full ranking details (all miners, not just top 5)
 - Detailed scoring calculations per pool
 - Position aggregation by pool
@@ -367,16 +317,16 @@ curl "${CARTHA_VERIFIER_URL}/v1/verified-miners"
 ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 ```
 
-### "Validator rejected" or "not whitelisted"
+### "Validator rejected" or "not whitelisted" (Mainnet Only)
 
-**Problem**: Validator hotkey is not in the whitelist
+**Problem**: On mainnet, validator hotkey is not in the whitelist
 
 **Solution**:
 
-- Contact the subnet owner to add your validator hotkey to the whitelist
+- **Testnet**: This error should not occur on testnet as all validators are allowed
+- **Mainnet**: Contact the subnet owner to add your validator hotkey to the verifier's whitelist
 - The error message will show your hotkey address - provide this to the subnet owner
-- Once whitelisted, update `cartha_validator/config.py` with the whitelist (or leave empty `[]` if subnet owner manages it server-side)
-- Restart the validator after whitelist is updated
+- The whitelist is managed by the verifier, not configured locally in the validator
 
 ### "No verified miners found"
 
@@ -396,8 +346,8 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 
 - Verify wallet is registered as validator
 - Check Bittensor network connectivity
-- Ensure `--dry-run` is not set if you want to publish
 - Check wallet has sufficient TAO for transactions
+- Verify you're using the correct network (`test`) and netuid (`78`)
 
 ### "Scoring errors"
 
@@ -433,31 +383,21 @@ ping $(echo "${CARTHA_VERIFIER_URL}" | sed 's|https\?://||' | cut -d/ -f1)
 
 ## Testing Your Validator
 
-### Step 1: Dry Run
+### Step 1: Verify Scoring Logic
+
+Run your validator and check the output JSON files:
 
 ```bash
+# Run validator
 uv run python -m cartha_validator.main \
   --verifier-url "${CARTHA_VERIFIER_URL}" \
   --netuid 78 \
   --subtensor.network test \
   --wallet-name <your-wallet-name> \
   --wallet-hotkey <your-hotkey-name> \
-  --dry-run \
   --use-verified-amounts
-```
 
-Expected output:
-
-- List of verified miners
-- Computed scores
-- Normalized weights vector
-- No `set_weights` call
-
-### Step 2: Verify Scoring Logic
-
-Check the output JSON files:
-
-```bash
+# Check output logs
 cat validator_logs/weights_*.json | jq .
 ```
 
@@ -468,8 +408,9 @@ Verify:
 - Miners are ranked correctly
 - Expired pools are filtered out (check `summary.expired_pools` in log file)
 - Epoch version matches expected weekly epoch
+- Weights are published to the subnet
 
-### Step 3: Test with Real Data
+### Step 2: Test with Real Data
 
 Once miners have submitted proofs:
 
@@ -478,19 +419,6 @@ Once miners have submitted proofs:
 curl "${CARTHA_VERIFIER_URL}/v1/verified-miners" | jq 'length'
 
 # Run validator
-uv run python -m cartha_validator.main \
-  --verifier-url "${CARTHA_VERIFIER_URL}" \
-  --netuid 78 \
-  --subtensor.network test \
-  --wallet-name <your-wallet-name> \
-  --wallet-hotkey <your-hotkey-name> \
-  --dry-run \
-  --use-verified-amounts
-```
-
-### Step 4: Publish (When Ready)
-
-```bash
 uv run python -m cartha_validator.main \
   --verifier-url "${CARTHA_VERIFIER_URL}" \
   --netuid 78 \
