@@ -185,6 +185,37 @@ def run_epoch(
                 f"{ANSI_BOLD}{ANSI_GREEN}[VERIFIER REQUEST]{ANSI_RESET} "
                 f"Successfully fetched {len(entries)} verified miner entries"
             )
+            
+            # Fetch deregistered hotkeys list for the epoch
+            deregistered_hotkeys: set[str] = set()
+            try:
+                dereg_response = client.get("/v1/deregistered-hotkeys", params={"epoch_version": epoch_version})
+                dereg_response.raise_for_status()
+                dereg_data = dereg_response.json()
+                deregistered_hotkeys = set(dereg_data.get("hotkeys", []))
+                if deregistered_hotkeys:
+                    bt.logging.warning(
+                        f"{ANSI_BOLD}{ANSI_YELLOW}[DEREGISTERED HOTKEYS]{ANSI_RESET} "
+                        f"Found {len(deregistered_hotkeys)} deregistered hotkeys - all positions will be scored 0"
+                    )
+                else:
+                    bt.logging.debug(
+                        f"{ANSI_DIM}No deregistered hotkeys found for epoch {epoch_version}{ANSI_RESET}"
+                    )
+            except httpx.HTTPStatusError as exc:
+                # Non-fatal: log warning but continue
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}[DEREGISTERED HOTKEYS]{ANSI_RESET} "
+                    f"Failed to fetch deregistered hotkeys: HTTP {exc.response.status_code}. "
+                    f"Continuing without hotkey-level deregistration checks."
+                )
+            except Exception as exc:
+                # Non-fatal: log warning but continue
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}[DEREGISTERED HOTKEYS]{ANSI_RESET} "
+                    f"Failed to fetch deregistered hotkeys: {exc}. "
+                    f"Continuing without hotkey-level deregistration checks."
+                )
     except httpx.HTTPStatusError as exc:
         # Format HTTP error for better readability
         error_detail = _format_http_error(exc)
@@ -297,6 +328,7 @@ def run_epoch(
         metagraph=metagraph,
         validator_uid=validator_uid,
         use_verified_amounts=use_verified_amounts,
+        deregistered_hotkeys=deregistered_hotkeys,
         force=force,
     )
 

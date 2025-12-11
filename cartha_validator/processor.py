@@ -83,6 +83,7 @@ def process_entries(
     validator_uid: int | None = None,
     use_verified_amounts: bool = False,
     force: bool = False,
+    deregistered_hotkeys: set[str] | None = None,
 ) -> dict[str, Any]:
     """Replay events, score miners, and optionally publish weights."""
     start_time = perf_counter()
@@ -156,10 +157,27 @@ def process_entries(
 
     metrics["total_miners"] = len(grouped)
 
+    # Normalize deregistered_hotkeys set (handle None)
+    if deregistered_hotkeys is None:
+        deregistered_hotkeys = set()
+    
     for uid, miner_entries in sources.items():
         combined_positions: dict[str, dict[str, int]] = {}
         per_miner_replay: list[float] = []
         miner_failed = False
+        
+        # Check if this hotkey is deregistered - if so, score all positions as 0
+        hotkey = grouped.get(uid, {}).get("hotkey")
+        if hotkey and hotkey in deregistered_hotkeys:
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}[DEREGISTERED HOTKEY]{ANSI_RESET} "
+                f"Hotkey {hotkey} (UID {uid}) is deregistered - scoring all positions as 0"
+            )
+            # Set score to 0 for this UID (all positions)
+            scores[uid] = 0.0
+            metrics["skipped"] += len(miner_entries)
+            metrics["expired_pools"] = metrics.get("expired_pools", 0) + len(miner_entries)
+            continue  # Skip processing this miner entirely
 
         for entry in miner_entries:
             if use_verified_amounts:
@@ -206,44 +224,6 @@ def process_entries(
                             f"Failed to parse deregistered_at for uid={uid} pool={pool_id}: {deregistered_at_str}, error: {exc}"
                         )
                         # Continue processing if we can't parse deregistered_at (don't skip the pool)
-                
-                # Check if pool was released mid-epoch
-                released_at_str = entry.get("released_at")
-                if released_at_str:
-                    try:
-                        # Parse released_at - handle both ISO format strings and datetime objects
-                        if isinstance(released_at_str, str):
-                            # Handle ISO format with or without timezone
-                            if released_at_str.endswith("Z"):
-                                released_at = datetime.fromisoformat(
-                                    released_at_str.replace("Z", "+00:00")
-                                )
-                            else:
-                                released_at = datetime.fromisoformat(released_at_str)
-                            # Ensure timezone-aware
-                            if released_at.tzinfo is None:
-                                released_at = released_at.replace(tzinfo=UTC)
-                        else:
-                            released_at = released_at_str
-                            if released_at.tzinfo is None:
-                                released_at = released_at.replace(tzinfo=UTC)
-
-                        if released_at <= current_time:
-                            # Pool was released mid-epoch - skip this pool (don't add to combined_positions)
-                            hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
-                            bt.logging.debug(
-                                f"Pool {pool_id} released for uid={uid} hotkey={hotkey}: "
-                                f"released_at={released_at} <= current_time={current_time}"
-                            )
-                            metrics["expired_pools"] = (
-                                metrics.get("expired_pools", 0) + 1
-                            )
-                            continue
-                    except (ValueError, TypeError) as exc:
-                        bt.logging.warning(
-                            f"Failed to parse released_at for uid={uid} pool={pool_id}: {released_at_str}, error: {exc}"
-                        )
-                        # Continue processing if we can't parse released_at (don't skip the pool)
                 
                 # Check if pool has expired
                 expires_at_str = entry.get("expires_at")

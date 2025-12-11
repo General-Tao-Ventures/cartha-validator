@@ -42,11 +42,13 @@ The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:5
    - **Epoch Fallback**: If requested epoch isn't frozen yet, verifier returns last frozen epoch
    - **Note**: The verifier handles all on-chain validation and RPC queries
 4. **Resolve UIDs** – For each hotkey, the validator asks the local subtensor for its UID on netuid 35
-5. **Aggregate Liquidity** – 
+5. **Fetch Deregistered Hotkeys** – `GET /v1/deregistered-hotkeys?epoch_version=<version>` from the verifier. Returns list of hotkeys that were deregistered during the epoch.
+6. **Aggregate Liquidity** – 
    - Uses verifier-supplied `amount` field (verifier handles all on-chain validation)
    - Positions are aggregated per UID across all pools
+   - **Deregistered Hotkey Filtering**: All positions for deregistered hotkeys are scored 0 (entire hotkey gets 0 score)
    - **Expired Pool Filtering**: Pools with `expires_at` in the past are excluded
-6. **Score Miners** – Pools are aggregated per UID. The boost formula is:
+7. **Score Miners** – Pools are aggregated per UID. The boost formula is:
    ```
    raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
    score = 1 - exp(-raw / score_temperature)    # score_temperature defaults to 1000
@@ -63,7 +65,9 @@ The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:5
 During a weekly epoch, the validator performs **daily expiry checks**:
 - Checks if 24 hours have passed since last check
 - Re-fetches verified miners to get updated `expires_at` values
-- Filters out expired pools and recalculates weights
+- Re-fetches deregistered hotkeys list
+- Filters out expired pools and deregistered hotkeys
+- Recalculates weights with filtered results
 - Updates cached weights with filtered results
 - Forces weight publication (bypasses cooldown)
 
@@ -107,7 +111,7 @@ Key instrumentation surfaced via logs (with ANSI colors and emojis):
 - **Epoch Information**: Weekly epoch version, epoch fallback events, daily expiry check status
 - **Replay Metrics**: Per-miner replay timings (`avgReplayMs`), global `avgReplay_ms` metric
 - **RPC Metrics**: RPC lag (difference between current head and snapshot block), connection status
-- **Processing Metrics**: Skipped/failure counts (missing UID, replay failure, missing metadata, expired pools)
+- **Processing Metrics**: Skipped/failure counts (missing UID, replay failure, missing metadata, expired pools, deregistered hotkeys)
 - **Publishing Metrics**: Weight publication status, cooldown checks, version key used
 - **Metagraph Sync**: Block numbers, tempo (Bittensor epoch length), network status
 - **Final Summary**: Miner counts, scored/skipped/failures, expired pools, dry-run flag, version key
@@ -126,6 +130,7 @@ additional instrumentation.
 - **Validator Whitelist**: Only whitelisted validators can query verified miners. Non-whitelisted validators are rejected with a clear error message.
 - **Registration Check**: Validates hotkey is registered before running
 - **Version Control**: Validators must meet the minimum version requirement set on-chain (`weight_versions` hyperparameter)
+- **Deregistered Hotkey Filtering**: Automatically scores all positions for deregistered hotkeys as 0
 - **Expired Pool Filtering**: Automatically excludes pools with `expires_at` in the past
 - **Epoch Freezing**: Uses verifier's epoch-frozen snapshots to prevent manipulation
 - **Verifier-Based Validation**: The verifier handles all on-chain validation and RPC queries, ensuring consistent and secure verification

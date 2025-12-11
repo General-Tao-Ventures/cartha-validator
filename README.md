@@ -45,8 +45,9 @@ The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursda
 1. **Weekly Epoch Detection** - Detects the current weekly epoch (Friday 00:00 UTC boundary)
 2. **Validator Whitelist Check** - Verifies that the validator hotkey is whitelisted (required to query verified miners)
 3. **Fetch Verified Miners** - Retrieves the epoch-frozen miner list from the verifier for the current weekly epoch
-4. **Daily Expiry Checks** - Performs daily checks during the week to filter out expired pools
-5. **Score Liquidity** - Calculates scores based on:
+4. **Fetch Deregistered Hotkeys** - Retrieves list of deregistered hotkeys from the verifier (all positions scored as 0)
+5. **Daily Expiry Checks** - Performs daily checks during the week to filter out expired pools and deregistered hotkeys
+6. **Score Liquidity** - Calculates scores based on:
    - Locked USDC amounts (6 decimals)
    - Lock duration (with Model-1 boost)
    - Pool weights (configurable per pool)
@@ -92,6 +93,7 @@ Cartha Validator enforces strict security policies:
 - **Epoch Freezing** - Uses verifier's epoch-frozen snapshots to prevent manipulation
 - **Verifier-Based Validation** - The verifier handles all on-chain validation and RPC queries, ensuring consistent and secure verification
 - **Registration Validation** - Checks that the validator hotkey is registered before running
+- **Deregistered Hotkey Filtering** - Automatically scores all positions for deregistered hotkeys as 0
 - **Expired Pool Filtering** - Automatically filters out pools that have expired (`expires_at` in the past)
 - **Version Control** - Validators must meet the minimum version requirement set on-chain
 
