@@ -12,7 +12,7 @@ authors = [
 ]
 readme = "README.md"
 dependencies = [
-  "bittensor>=9.12.2",
+  "bittensor>=9.12.2,<10",
   "web3>=6.11,<7",
   "eth-account>=0.10,<0.11",
   "hexbytes>=0.3.0",
