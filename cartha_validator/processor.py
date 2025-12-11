@@ -166,7 +166,86 @@ def process_entries(
                 # Use pool_id from verifier (now included in VerifiedMinerEntry)
                 pool_id = entry.get("pool_id", "default")
 
-                # Check if this pool has expired
+                # Check if this pool has expired, been released, or miner was deregistered
+                current_time = datetime.now(UTC)
+                
+                # Check if miner was deregistered mid-epoch
+                deregistered_at_str = entry.get("deregistered_at")
+                if deregistered_at_str:
+                    try:
+                        # Parse deregistered_at - handle both ISO format strings and datetime objects
+                        if isinstance(deregistered_at_str, str):
+                            # Handle ISO format with or without timezone
+                            if deregistered_at_str.endswith("Z"):
+                                deregistered_at = datetime.fromisoformat(
+                                    deregistered_at_str.replace("Z", "+00:00")
+                                )
+                            else:
+                                deregistered_at = datetime.fromisoformat(deregistered_at_str)
+                            # Ensure timezone-aware
+                            if deregistered_at.tzinfo is None:
+                                deregistered_at = deregistered_at.replace(tzinfo=UTC)
+                        else:
+                            deregistered_at = deregistered_at_str
+                            if deregistered_at.tzinfo is None:
+                                deregistered_at = deregistered_at.replace(tzinfo=UTC)
+
+                        if deregistered_at <= current_time:
+                            # Miner was deregistered mid-epoch - skip this pool (don't add to combined_positions)
+                            hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
+                            bt.logging.debug(
+                                f"Miner deregistered for uid={uid} hotkey={hotkey}: "
+                                f"deregistered_at={deregistered_at} <= current_time={current_time}"
+                            )
+                            metrics["expired_pools"] = (
+                                metrics.get("expired_pools", 0) + 1
+                            )
+                            continue
+                    except (ValueError, TypeError) as exc:
+                        bt.logging.warning(
+                            f"Failed to parse deregistered_at for uid={uid} pool={pool_id}: {deregistered_at_str}, error: {exc}"
+                        )
+                        # Continue processing if we can't parse deregistered_at (don't skip the pool)
+                
+                # Check if pool was released mid-epoch
+                released_at_str = entry.get("released_at")
+                if released_at_str:
+                    try:
+                        # Parse released_at - handle both ISO format strings and datetime objects
+                        if isinstance(released_at_str, str):
+                            # Handle ISO format with or without timezone
+                            if released_at_str.endswith("Z"):
+                                released_at = datetime.fromisoformat(
+                                    released_at_str.replace("Z", "+00:00")
+                                )
+                            else:
+                                released_at = datetime.fromisoformat(released_at_str)
+                            # Ensure timezone-aware
+                            if released_at.tzinfo is None:
+                                released_at = released_at.replace(tzinfo=UTC)
+                        else:
+                            released_at = released_at_str
+                            if released_at.tzinfo is None:
+                                released_at = released_at.replace(tzinfo=UTC)
+
+                        if released_at <= current_time:
+                            # Pool was released mid-epoch - skip this pool (don't add to combined_positions)
+                            hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
+                            bt.logging.debug(
+                                f"Pool {pool_id} released for uid={uid} hotkey={hotkey}: "
+                                f"released_at={released_at} <= current_time={current_time}"
+                            )
+                            metrics["expired_pools"] = (
+                                metrics.get("expired_pools", 0) + 1
+                            )
+                            continue
+                    except (ValueError, TypeError) as exc:
+                        bt.logging.warning(
+                            f"Failed to parse released_at for uid={uid} pool={pool_id}: {released_at_str}, error: {exc}"
+                        )
+                        # Continue processing if we can't parse released_at (don't skip the pool)
+                
+                # Check if pool has expired
                 expires_at_str = entry.get("expires_at")
                 if expires_at_str:
                     try:
@@ -187,7 +266,6 @@ def process_entries(
                             if expires_at.tzinfo is None:
                                 expires_at = expires_at.replace(tzinfo=UTC)
 
-                        current_time = datetime.now(UTC)
                         if expires_at < current_time:
                             # Pool has expired - skip this pool (don't add to combined_positions)
                             hotkey = grouped.get(uid, {}).get("hotkey", "unknown")

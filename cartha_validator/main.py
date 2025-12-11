@@ -213,18 +213,8 @@ def main() -> None:
                     "%Y-%m-%dT%H:%M:%SZ"
                 )
                 
-                # Track last daily check to query verifier daily for expiry updates
-                current_time = datetime.now(UTC)
-                last_daily_check_key = f"last_daily_check_{current_weekly_epoch_version}"
-                last_daily_check = getattr(main, last_daily_check_key, None)
-                should_check_daily = (
-                    last_daily_check is None 
-                    or (current_time - last_daily_check) >= timedelta(days=1)
-                )
-
                 # Check if this is a new weekly epoch or a restart - fetch frozen list and calculate weights
-                # OR if it's been a day since last check (for expiry date updates)
-                if last_weekly_epoch_version != current_weekly_epoch_version or should_check_daily:
+                if last_weekly_epoch_version != current_weekly_epoch_version:
                     # This could be:
                     # 1. A new weekly epoch (Friday 00:00 UTC)
                     # 2. A validator restart during an ongoing weekly epoch
@@ -252,14 +242,6 @@ def main() -> None:
                     # Force weights on startup (when last_weekly_epoch_version is None) to ensure
                     # validator always sets weights when it starts, bypassing cooldown checks
                     is_startup = last_weekly_epoch_version is None
-                    is_daily_check = should_check_daily and last_weekly_epoch_version == current_weekly_epoch_version
-                    
-                    if is_daily_check:
-                        bt.logging.info(
-                            f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_INFO} Daily expiry check{ANSI_RESET} "
-                            f"for weekly epoch {ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
-                            f"{ANSI_DIM}Querying verifier to check for expired pools...{ANSI_RESET}"
-                        )
                     
                     result = run_epoch(
                         verifier_url=args.verifier_url,
@@ -273,11 +255,11 @@ def main() -> None:
                         metagraph=metagraph,
                         validator_uid=validator_uid,
                         args=args,
-                        force=is_startup or is_daily_check,  # Force on startup or daily check
+                        force=is_startup,  # Force on startup
                     )
 
                     # Cache the weights and scores for this weekly epoch
-                    # These will be reused throughout the week for every Bittensor epoch
+                    # Note: We'll refresh these every Bittensor epoch to catch mid-day changes
                     # Note: epoch_version may have been updated if verifier returned a fallback epoch
                     cached_weights = result.get("weights", {})
                     cached_scores = result.get("scores", {})
@@ -285,10 +267,6 @@ def main() -> None:
                     cached_epoch_version = result.get(
                         "epoch_version", current_weekly_epoch_version
                     )
-                    
-                    # Update last daily check timestamp
-                    if should_check_daily:
-                        setattr(main, last_daily_check_key, current_time)
                     
                     # Track the weekly epoch we're in (not necessarily the frozen epoch version)
                     if last_weekly_epoch_version != current_weekly_epoch_version:
@@ -298,15 +276,7 @@ def main() -> None:
                         bt.logging.info(
                             f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weekly epoch weights calculated and cached{ANSI_RESET} "
                             f"{ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
-                            f"{ANSI_DIM}Will publish these weights every Bittensor epoch (~{bittensor_epoch_length} blocks) throughout the week.{ANSI_RESET}"
-                        )
-                    elif is_daily_check:
-                        # Daily check updated cached weights with expiry filtering
-                        expired_count = result.get("summary", {}).get("expired_pools", 0)
-                        bt.logging.info(
-                            f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Daily expiry check complete{ANSI_RESET} "
-                            f"for weekly epoch {ANSI_BOLD}{current_weekly_epoch_version}{ANSI_RESET}. "
-                            f"{ANSI_DIM}Expired pools filtered: {expired_count}. Updated weights cached.{ANSI_RESET}"
+                            f"{ANSI_DIM}Will refresh list and publish weights every Bittensor epoch (~{bittensor_epoch_length} blocks) throughout the week.{ANSI_RESET}"
                         )
                 else:
                     # Same weekly epoch - check if we need to publish cached weights for this Bittensor epoch
@@ -342,12 +312,51 @@ def main() -> None:
 
                         if should_publish:
                             bt.logging.info(
-                                f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Publishing cached weights{ANSI_RESET} "
+                                f"{ANSI_BOLD}{ANSI_CYAN}{EMOJI_ROCKET} Bittensor epoch reached{ANSI_RESET} "
                                 f"for weekly epoch {ANSI_BOLD}{cached_epoch_version}{ANSI_RESET} "
-                                f"{ANSI_DIM}(Bittensor epoch: {blocks_since_update}/{bittensor_epoch_length} blocks){ANSI_RESET}"
+                                f"{ANSI_DIM}({blocks_since_update}/{bittensor_epoch_length} blocks). "
+                                f"Refreshing verified miners list to check for mid-day changes...{ANSI_RESET}"
                             )
 
-                            # Publish the cached weights (same weights throughout the week)
+                            # Refresh the verified miners list every Bittensor epoch to catch mid-day
+                            # deregistrations, releases, and expirations
+                            try:
+                                result = run_epoch(
+                                    verifier_url=args.verifier_url,
+                                    epoch_version=current_weekly_epoch_version,
+                                    settings=settings,
+                                    timeout=args.timeout,
+                                    dry_run=args.dry_run,
+                                    use_verified_amounts=args.use_verified_amounts,
+                                    subtensor=subtensor,
+                                    wallet=wallet,
+                                    metagraph=metagraph,
+                                    validator_uid=validator_uid,
+                                    args=args,
+                                    force=True,  # Force refresh to get latest state
+                                )
+                                
+                                # Update cached weights and scores with latest state
+                                cached_weights = result.get("weights", {})
+                                cached_scores = result.get("scores", {})
+                                cached_epoch_version = result.get(
+                                    "epoch_version", current_weekly_epoch_version
+                                )
+                                
+                                expired_count = result.get("summary", {}).get("expired_pools", 0)
+                                if expired_count > 0:
+                                    bt.logging.info(
+                                        f"{ANSI_BOLD}{ANSI_YELLOW} Mid-day changes detected{ANSI_RESET}: "
+                                        f"{expired_count} expired/released/deregistered pools filtered"
+                                    )
+                            except Exception as exc:
+                                bt.logging.warning(
+                                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Failed to refresh verified miners list{ANSI_RESET}: {exc}. "
+                                    f"{ANSI_DIM}Using cached weights from last successful refresh.{ANSI_RESET}"
+                                )
+                                # Continue with cached weights if refresh fails
+
+                            # Publish the updated weights
                             published_weights = publish(
                                 cached_scores,
                                 epoch_version=cached_epoch_version,
@@ -361,7 +370,7 @@ def main() -> None:
                             if published_weights:
                                 last_weight_publish_block = current_block
                                 bt.logging.info(
-                                    f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Cached weights published{ANSI_RESET} "
+                                    f"{ANSI_BOLD}{ANSI_GREEN}{EMOJI_SUCCESS} Weights published{ANSI_RESET} "
                                     f"{ANSI_DIM}({len(published_weights)} miners, weekly epoch {cached_epoch_version}){ANSI_RESET}"
                                 )
                         else:
