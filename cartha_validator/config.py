@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Mapping
 from datetime import time
+from pathlib import Path
 
 import bittensor as bt
 from pydantic import BaseModel, Field, HttpUrl
@@ -13,6 +15,29 @@ from pydantic import BaseModel, Field, HttpUrl
 from .epoch import epoch_start
 
 DEFAULT_VERIFIER_URL = "https://cartha-verifier-826542474079.us-central1.run.app"
+
+# Default parent vault address (Base Sepolia testnet)
+# In the future, this can be a list of multiple parent vaults
+DEFAULT_PARENT_VAULT_ADDRESS = "0x0dB1218cbCFf1D49181cc810a2b0D54D44652A8d"
+
+# Default public Base Sepolia RPC endpoint
+DEFAULT_BASE_SEPOLIA_RPC_URL = "https://sepolia.base.org"
+
+
+def load_env_file() -> None:
+    """Load environment variables from .env file if it exists."""
+    env_file = Path(".env")
+    if env_file.exists():
+        with env_file.open() as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    # Remove quotes if present
+                    value = value.strip('"').strip("'")
+                    # Only set if not already in environment
+                    if key not in os.environ:
+                        os.environ[key] = value
 
 
 class ValidatorSettings(BaseModel):
@@ -22,6 +47,14 @@ class ValidatorSettings(BaseModel):
     verifier_url: HttpUrl | str = DEFAULT_VERIFIER_URL
     rpc_urls: Mapping[int, str] = Field(default_factory=dict)
     pool_weights: Mapping[str, float] = Field(default_factory=dict)
+    parent_vault_address: str = Field(
+        default=DEFAULT_PARENT_VAULT_ADDRESS,
+        description="Parent vault contract address for querying pool weights",
+    )
+    parent_vault_rpc_url: str = Field(
+        default=DEFAULT_BASE_SEPOLIA_RPC_URL,
+        description="RPC URL for querying parent vault contract",
+    )
     max_lock_days: int = 365
     token_decimals: int = 6
     score_temperature: float = 1000.0
@@ -91,6 +124,9 @@ def parse_args() -> argparse.Namespace:
     Returns:
         Parsed arguments namespace with config attached
     """
+    # Load .env file if it exists
+    load_env_file()
+    
     parser = argparse.ArgumentParser(description="Cartha subnet validator cron runner")
     parser.add_argument(
         "--verifier-url",
@@ -128,11 +164,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not publish weights; print the computed vector instead.",
     )
+    # use_verified_amounts defaults to True - use --no-use-verified-amounts to disable
+    parser.add_argument(
+        "--no-use-verified-amounts",
+        dest="use_verified_amounts",
+        action="store_false",
+        help="Disable verified amounts mode and use on-chain replay instead (not recommended). Verified amounts mode is enabled by default.",
+    )
+    # Keep --use-verified-amounts for backward compatibility (does nothing since it's already default)
     parser.add_argument(
         "--use-verified-amounts",
+        dest="use_verified_amounts",
         action="store_true",
-        help="Skip on-chain replay and use the verifier's amount field directly (dev/testing only).",
+        help="Use the verifier's verified amount field (default: enabled). This flag is kept for backward compatibility.",
     )
+    # Set default value - verified amounts mode is now the default
+    parser.set_defaults(use_verified_amounts=True)
     parser.add_argument(
         "--run-once",
         action="store_true",
@@ -149,6 +196,18 @@ def parse_args() -> argparse.Namespace:
         type=str,
         default=DEFAULT_SETTINGS.log_dir,
         help=f"Directory to save epoch weight logs (default: {DEFAULT_SETTINGS.log_dir}).",
+    )
+    parser.add_argument(
+        "--parent-vault-address",
+        type=str,
+        default=os.environ.get("PARENT_VAULT_ADDRESS", DEFAULT_PARENT_VAULT_ADDRESS),
+        help=f"Parent vault contract address for querying pool weights from chain (default: {DEFAULT_PARENT_VAULT_ADDRESS}). Can also be set via PARENT_VAULT_ADDRESS env var.",
+    )
+    parser.add_argument(
+        "--parent-vault-rpc-url",
+        type=str,
+        default=os.environ.get("PARENT_VAULT_RPC_URL", DEFAULT_BASE_SEPOLIA_RPC_URL),
+        help=f"RPC URL for querying parent vault contract (default: {DEFAULT_BASE_SEPOLIA_RPC_URL}). Can also be set via PARENT_VAULT_RPC_URL env var.",
     )
     # Add bittensor subtensor, wallet, and logging args (like template does)
     bt.subtensor.add_args(parser)

@@ -33,6 +33,7 @@ from .logging import (
     EMOJI_TROPHY,
     EMOJI_WARNING,
 )
+from .pool_weights import get_pool_weights_for_scoring
 from .processor import PublishFn, ReplayFn, format_positions, process_entries
 from .weights import publish
 
@@ -90,7 +91,7 @@ def run_epoch(
         dry_run: If True, don't publish weights
         replay_fn: Function to replay on-chain events
         publish_fn: Function to publish weights
-        use_verified_amounts: Skip RPC replay and use verifier amounts
+        use_verified_amounts: Use verifier amounts (default: True). Set to False to use on-chain replay instead.
         subtensor: Bittensor subtensor instance (created if None)
         wallet: Bittensor wallet instance (created if None)
         metagraph: Bittensor metagraph instance (optional)
@@ -315,6 +316,34 @@ def run_epoch(
         subtensor = bt.subtensor()
     if wallet is None:
         wallet = bt.wallet()
+
+    # Query pool weights from parent vault contract before scoring
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_CYAN}[POOL WEIGHTS]{ANSI_RESET} "
+        f"Querying pool weights from parent vault contract..."
+    )
+    queried_weights = get_pool_weights_for_scoring(
+        parent_vault_address=settings.parent_vault_address,
+        rpc_url=settings.parent_vault_rpc_url,
+        timeout=timeout,
+        fallback_weights=settings.pool_weights,
+    )
+    
+    # Update settings with queried weights (create a copy to avoid mutating original)
+    if queried_weights:
+        # Create a new settings object with updated pool_weights
+        settings_dict = settings.model_dump()
+        settings_dict["pool_weights"] = queried_weights
+        settings = ValidatorSettings(**settings_dict)
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_GREEN}[POOL WEIGHTS]{ANSI_RESET} "
+            f"Updated pool weights from chain: {len(queried_weights)} pools"
+        )
+    else:
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}[POOL WEIGHTS]{ANSI_RESET} "
+            f"No weights queried, using fallback/default weights"
+        )
 
     result = process_entries(
         entries,

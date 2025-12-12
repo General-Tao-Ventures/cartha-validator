@@ -107,6 +107,29 @@ def main() -> None:
         f"{ANSI_DIM}(network: {subtensor.chain_endpoint}){ANSI_RESET}"
     )
 
+    # Get parent vault settings from args (with defaults from env/config)
+    parent_vault_address = getattr(args, "parent_vault_address", None)
+    parent_vault_rpc_url = getattr(args, "parent_vault_rpc_url", None)
+    
+    # Validate that parent vault settings are configured
+    if not parent_vault_address or not parent_vault_rpc_url:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}❌ MISSING REQUIRED CONFIGURATION{ANSI_RESET}\n"
+            f"  Parent vault address and RPC URL are required.\n"
+            f"  Configure via:\n"
+            f"    1. Command-line: --parent-vault-address and --parent-vault-rpc-url\n"
+            f"    2. Environment variables: PARENT_VAULT_ADDRESS and PARENT_VAULT_RPC_URL\n"
+            f"    3. .env file: PARENT_VAULT_ADDRESS=... and PARENT_VAULT_RPC_URL=...\n"
+            f"  Current values:\n"
+            f"    parent_vault_address: {parent_vault_address or 'NOT SET'}\n"
+            f"    parent_vault_rpc_url: {parent_vault_rpc_url or 'NOT SET'}"
+        )
+        raise RuntimeError(
+            "Parent vault address and RPC URL must be configured. "
+            "Set via --parent-vault-address/--parent-vault-rpc-url, "
+            "PARENT_VAULT_ADDRESS/PARENT_VAULT_RPC_URL env vars, or .env file."
+        )
+    
     settings = DEFAULT_SETTINGS.model_copy(
         update={
             "verifier_url": args.verifier_url,
@@ -114,7 +137,15 @@ def main() -> None:
             "timeout": args.timeout,
             "poll_interval": args.poll_interval,
             "log_dir": args.log_dir,
+            "parent_vault_address": parent_vault_address,
+            "parent_vault_rpc_url": parent_vault_rpc_url,
         },
+    )
+    
+    bt.logging.info(
+        f"{ANSI_BOLD}{ANSI_GREEN}✓ Parent Vault Configuration{ANSI_RESET}\n"
+        f"  Address: {ANSI_DIM}{parent_vault_address}{ANSI_RESET}\n"
+        f"  RPC URL: {ANSI_DIM}{parent_vault_rpc_url}{ANSI_RESET}"
     )
 
     if args.run_once:
