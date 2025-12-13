@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import math
 from typing import Any
 
 import bittensor as bt
@@ -53,24 +52,21 @@ def test_score_entry_applies_weight_and_boost() -> None:
     settings = DEFAULT_SETTINGS.model_copy(update={
         "pool_weights": {"default": 2.0},
         "max_lock_days": 365,
-        "score_temperature": 1000.0,
     })
     unit = 10 ** settings.token_decimals
     entry = {"default": {"amount": 1000 * unit, "lockDays": 180}}
     score = score_entry(entry, settings=settings)
     amount_tokens = 1000
-    raw = 2.0 * amount_tokens * (180 / 365)
-    expected = 1 - math.exp(-raw / settings.score_temperature)
+    expected = 2.0 * amount_tokens * (180 / 365)
     assert pytest.approx(score, rel=1e-6) == expected
 
 
 def test_score_entry_clamps_lock_days() -> None:
-    settings = DEFAULT_SETTINGS.model_copy(update={"max_lock_days": 90, "score_temperature": 1000.0})
+    settings = DEFAULT_SETTINGS.model_copy(update={"max_lock_days": 90})
     unit = 10 ** settings.token_decimals
     entry = {"default": {"amount": 500 * unit, "lockDays": 180}}
     score = score_entry(entry, settings=settings)
-    raw = 500 * (90 / 90)
-    expected = 1 - math.exp(-raw / settings.score_temperature)
+    expected = 500 * (90 / 90)
     assert score == pytest.approx(expected)
 
 
@@ -152,7 +148,6 @@ def test_multi_wallet_ranking_outputs_json(capfd) -> None:
             "pool_weights": {"default": 1.0, "oil": 1.5},
             "max_lock_days": 365,
             "netuid": 77,
-            "score_temperature": 1000.0,
         }
     )
     unit = 10 ** settings.token_decimals
@@ -179,13 +174,10 @@ def test_multi_wallet_ranking_outputs_json(capfd) -> None:
     ]
 
     scores = {entry["uid"]: score_entry(entry["positions"], settings=settings) for entry in entries}
-    raw_expectations = {
+    expected_scores = {
         1: 1.0 * 1000 * (180 / 365),
         10: (1.0 * 800 * (365 / 365)) + (1.5 * 500 * (120 / 365)),
         3: 1.0 * 400 * (60 / 365),
-    }
-    expected_scores = {
-        uid: 1 - math.exp(-raw / settings.score_temperature) for uid, raw in raw_expectations.items()
     }
     for uid, expected_score in expected_scores.items():
         assert scores[uid] == pytest.approx(expected_score, rel=1e-9)

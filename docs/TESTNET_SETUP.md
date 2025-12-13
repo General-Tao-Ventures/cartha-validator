@@ -73,6 +73,9 @@ export CARTHA_VERIFIER_URL="https://cartha-verifier-826542474079.us-central1.run
 export CARTHA_NETWORK="test"  # Use "test" for testnet
 export CARTHA_NETUID=78       # Testnet subnet UID
 
+# Optional: Leaderboard API (defaults to production URL if not set)
+export LEADERBOARD_API_URL="https://cartha-leaderboard-api-826542474079.us-central1.run.app"
+
 # Optional: Validator-specific settings
 export VALIDATOR_LOG_DIR="validator_logs"
 export VALIDATOR_POLL_INTERVAL=300  # Seconds between runs
@@ -86,6 +89,11 @@ curl "${CARTHA_VERIFIER_URL}/health"
 
 # Test verified miners endpoint
 curl "${CARTHA_VERIFIER_URL}/v1/verified-miners"
+
+# Test leaderboard API connection (if configured)
+if [ -n "${LEADERBOARD_API_URL}" ]; then
+  curl "${LEADERBOARD_API_URL}/health"
+fi
 ```
 
 ## Running the Validator
@@ -138,7 +146,6 @@ For each verified miner, the validator:
    - Locked amount
    - Lock duration (lockDays)
    - Pool weights
-   - Temperature curve
    - Expired pool filtering
 
 ### Step 3: Cache & Publish Weights
@@ -173,7 +180,6 @@ Edit `cartha_validator/config.py` to customize:
 
 - Pool weights
 - Max lock days
-- Score temperature
 - Epoch schedule
 
 **Note**: 
@@ -194,7 +200,6 @@ Edit `cartha_validator/config.py` to customize:
 # In config.py or via environment
 pool_weights = {"default": 1.0}
 max_lock_days = 365
-score_temperature = 1000.0
 ```
 
 ### Epoch Schedule

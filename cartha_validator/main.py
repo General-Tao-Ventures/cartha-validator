@@ -130,6 +130,9 @@ def main() -> None:
             "PARENT_VAULT_ADDRESS/PARENT_VAULT_RPC_URL env vars, or .env file."
         )
     
+    # Handle leaderboard API URL (empty string means disable)
+    leaderboard_api_url = args.leaderboard_api_url if args.leaderboard_api_url else None
+    
     settings = DEFAULT_SETTINGS.model_copy(
         update={
             "verifier_url": args.verifier_url,
@@ -139,6 +142,7 @@ def main() -> None:
             "log_dir": args.log_dir,
             "parent_vault_address": parent_vault_address,
             "parent_vault_rpc_url": parent_vault_rpc_url,
+            "leaderboard_api_url": leaderboard_api_url,
         },
     )
     
@@ -147,6 +151,16 @@ def main() -> None:
         f"  Address: {ANSI_DIM}{parent_vault_address}{ANSI_RESET}\n"
         f"  RPC URL: {ANSI_DIM}{parent_vault_rpc_url}{ANSI_RESET}"
     )
+    
+    if settings.leaderboard_api_url:
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_GREEN}✓ Leaderboard API{ANSI_RESET}\n"
+            f"  URL: {ANSI_DIM}{settings.leaderboard_api_url}{ANSI_RESET}"
+        )
+    else:
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_YELLOW}⚠ Leaderboard API{ANSI_RESET} - Disabled"
+        )
 
     if args.run_once:
         # Single run mode - always force weights on startup

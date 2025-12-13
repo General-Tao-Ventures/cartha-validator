@@ -498,6 +498,21 @@ def process_entries(
         )
 
     details.sort(key=lambda item: item["score"], reverse=True)
+    
+    # Calculate display scores (normalized to 0-1000 for frontend display)
+    # Raw scores are preserved for weight calculation, display_score is just for UI
+    if details:
+        max_raw_score = max(item["score"] for item in details)
+        if max_raw_score > 0:
+            for item in details:
+                # Normalize to 0-1000 scale for display
+                item["display_score"] = round((item["score"] / max_raw_score) * 1000, 2)
+        else:
+            for item in details:
+                item["display_score"] = 0.0
+    else:
+        # No details, nothing to do
+        pass
 
     summary = {
         **metrics,

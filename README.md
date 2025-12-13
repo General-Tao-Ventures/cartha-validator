@@ -51,32 +51,27 @@ The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursda
    - Locked USDC amounts (6 decimals)
    - Lock duration (with Model-1 boost)
    - Pool weights (configurable per pool)
-   - Temperature curve (default: 1000)
    - Expired pool filtering (pools with `expires_at` in the past are excluded)
-6. **Cache & Publish** - Normalizes scores to weights, caches them for the week, and publishes via `set_weights` to Bittensor every Bittensor epoch (tempo blocks)
+7. **Cache & Publish** - Normalizes scores to weights, caches them for the week, and publishes via `set_weights` to Bittensor every Bittensor epoch (tempo blocks)
+8. **Submit Rankings** - Automatically submits ranking data to the leaderboard API after successfully publishing weights (if leaderboard API is configured)
 
 **Note**: The verifier handles all on-chain validation and RPC queries. Validators do not need to configure RPC endpoints.
 
 ## Scoring Algorithm
 
-The validator uses a sophisticated scoring system:
+The validator uses a direct scoring system that preserves competitive differences:
 
 - **Raw Score Calculation:**
   ```
   raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
   ```
 
-- **Temperature Curve:**
-  ```
-  score = 1 - exp(-raw / temperature)
-  ```
-
 - **Normalized Weights:**
   ```
-  weight = score / sum(all_scores)
+  weight = raw / sum(all_raw_scores)
   ```
 
-This ensures fair distribution of rewards proportional to liquidity contribution while preventing any single miner from dominating.
+Scores are used directly without exponential normalization, ensuring that differences in liquidity positions translate proportionally to weight distribution.
 
 ## Documentation
 

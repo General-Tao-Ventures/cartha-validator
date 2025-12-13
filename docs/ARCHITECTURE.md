@@ -22,7 +22,7 @@ The validator is a lightweight daemon that operates on a **weekly epoch cycle**.
 | `cartha_validator/epoch_runner.py` | Orchestrates single epoch execution: fetches verified miners, processes entries, scores, and publishes weights. |
 | `cartha_validator/processor.py` | Processes verifier entries: UID resolution, position replay/aggregation, expired pool filtering, scoring orchestration. |
 | `cartha_validator/indexer.py` | Event replay helpers for Model‑1 vault semantics (lock created/updated/released). |
-| `cartha_validator/scoring.py` | Liquidity scoring with pool weights, lock duration boost, and temperature curve (`1 - exp(-raw/temperature)`). |
+| `cartha_validator/scoring.py` | Liquidity scoring with pool weights and lock duration boost. Returns raw scores directly for proportional weight distribution. |
 | `cartha_validator/weights.py` | Normalises scores, derives/queries `version_key`, wraps `set_weights` with cooldown checks. |
 | `cartha_validator/config.py` | Typed settings (verifier URL, validator whitelist, pool weights, max lock days, epoch schedule). |
 | `cartha_validator/epoch.py` | Weekly epoch boundary helpers (Friday 00:00 UTC → Thursday 23:59 UTC). |
@@ -48,14 +48,14 @@ The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:5
    - Positions are aggregated per UID across all pools
    - **Deregistered Hotkey Filtering**: All positions for deregistered hotkeys are scored 0 (entire hotkey gets 0 score)
    - **Expired Pool Filtering**: Pools with `expires_at` in the past are excluded
-7. **Score Miners** – Pools are aggregated per UID. The boost formula is:
+7. **Score Miners** – Pools are aggregated per UID. The scoring formula is:
    ```
    raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
-   score = 1 - exp(-raw / score_temperature)    # score_temperature defaults to 1000
+   score = raw  # Raw scores used directly
    ```
-7. **Normalise Weights** – `weight = score / Σ(score)`; weights sum to 1
-8. **Cache Weights** – Weights are cached for the entire weekly epoch
-9. **Publish** – `weights.publish()` checks version requirements and calls
+8. **Normalise Weights** – `weight = score / Σ(score)`; weights sum to 1
+9. **Cache Weights** – Weights are cached for the entire weekly epoch
+10. **Publish** – `weights.publish()` checks version requirements and calls
    `subtensor.set_weights()` with the UID vector, values, and version
    - **Cooldown Check**: Skips if not enough blocks have passed since last update (unless `force=True`)
    - **Bittensor Epoch**: Publishes cached weights every Bittensor epoch (tempo blocks) throughout the week

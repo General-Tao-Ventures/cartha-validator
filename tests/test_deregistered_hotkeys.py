@@ -43,7 +43,6 @@ def test_process_entries_with_deregistered_hotkey_scores_zero(monkeypatch):
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     entries = [
@@ -114,7 +113,6 @@ def test_process_entries_without_deregistered_hotkeys_scores_normally(monkeypatc
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     entries = [
@@ -173,7 +171,6 @@ def test_process_entries_partial_deregistered_hotkeys(monkeypatch):
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     entries = [
@@ -247,7 +244,6 @@ def test_process_entries_deregistered_hotkeys_none_handles_gracefully(monkeypatc
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     entries = [

@@ -36,6 +36,7 @@ from .logging import (
 from .pool_weights import get_pool_weights_for_scoring
 from .processor import PublishFn, ReplayFn, format_positions, process_entries
 from .weights import publish
+from .leaderboard_client import send_ranking_to_leaderboard
 
 # Re-export types for convenience
 __all__ = ["run_epoch"]
@@ -391,7 +392,8 @@ def run_epoch(
             "uid": item["uid"],
             "hotkey": item["hotkey"],
             "slot_uid": item.get("slot_uid"),
-            "score": round(item["score"], 6),
+            "score": round(item["score"], 6),  # Raw score (for weight calculation)
+            "display_score": item.get("display_score", round(item["score"], 2)),  # Normalized 0-1000 for display
             "weight": round(item["weight"], 6),
             "positions": format_positions(item["positions"], result["unit"]),
         }
@@ -449,6 +451,21 @@ def run_epoch(
             )
         if len(result["ranking"]) > 5:
             bt.logging.debug(f"Full ranking:\n{json.dumps(ranking_payload, indent=2)}")
+        
+        # Send ranking to leaderboard API (only if not dry-run and weights published successfully)
+        if not dry_run and settings.leaderboard_api_url:
+            try:
+                send_ranking_to_leaderboard(
+                    leaderboard_url=settings.leaderboard_api_url,
+                    validator_hotkey=validator_hotkey,
+                    epoch_version=epoch_version,
+                    ranking_data=ranking_payload,
+                )
+            except Exception as e:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}[LEADERBOARD]{ANSI_RESET} "
+                    f"Failed to send ranking to leaderboard: {e}"
+                )
 
     return result
 

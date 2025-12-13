@@ -110,7 +110,6 @@ def test_run_epoch_fetches_deregistered_hotkeys(mock_client_class):
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     
@@ -200,7 +199,6 @@ def test_run_epoch_handles_deregistered_hotkeys_endpoint_failure(mock_client_cla
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     
@@ -286,7 +284,6 @@ def test_run_epoch_with_no_deregistered_hotkeys(mock_client_class):
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     

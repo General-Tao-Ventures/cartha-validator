@@ -162,7 +162,7 @@ cartha-subnet-validator/
 │   ├── epoch_runner.py  # Single epoch execution orchestration
 │   ├── processor.py    # Entry processing, UID resolution, position aggregation
 │   ├── indexer.py       # RPC replay logic (Model-1 vault events)
-│   ├── scoring.py       # Scoring algorithms with pool weights and temperature
+│   ├── scoring.py       # Scoring algorithms with pool weights and lock duration boost
 │   ├── weights.py       # Weight normalization and publishing
 │   ├── config.py        # Configuration and argument parsing
 │   ├── epoch.py         # Weekly epoch boundary helpers

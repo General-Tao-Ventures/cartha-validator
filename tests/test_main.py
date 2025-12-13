@@ -39,7 +39,6 @@ def test_process_entries_dry_run(monkeypatch):
         update={
             "rpc_urls": {31337: "http://localhost:8545"},
             "token_decimals": 6,
-            "score_temperature": 1000.0,
         }
     )
     entries = [

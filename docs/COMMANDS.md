@@ -24,6 +24,12 @@ uv run python -m cartha_validator.main [OPTIONS]
 | `--verifier-url` | string | `https://cartha-verifier-826542474079.us-central1.run.app` | Base URL for the Cartha verifier |
 | `--timeout` | float | `15.0` | HTTP timeout (seconds) for verifier calls |
 
+### Leaderboard Configuration
+
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--leaderboard-api-url` | string | `https://cartha-leaderboard-api-826542474079.us-central1.run.app` | Leaderboard API URL for submitting rankings. Use empty string (`""`) to disable. |
+
 ### Network Configuration
 
 | Argument | Type | Default | Description |
@@ -123,6 +129,24 @@ uv run python -m cartha_validator.main \
   --verifier-url http://localhost:8000
 ```
 
+### Custom Leaderboard API URL
+
+```bash
+# Use a different leaderboard API instance
+uv run python -m cartha_validator.main \
+  --wallet-name cold \
+  --wallet-hotkey hot \
+  --netuid 35 \
+  --leaderboard-api-url http://localhost:8001
+
+# Disable leaderboard submissions
+uv run python -m cartha_validator.main \
+  --wallet-name cold \
+  --wallet-hotkey hot \
+  --netuid 35 \
+  --leaderboard-api-url ""
+```
+
 ### Custom Epoch
 
 ```bash
@@ -154,9 +178,9 @@ The validator uses `cartha_validator/config.py` for default settings. You can ov
 ```python
 netuid: 35
 verifier_url: "https://cartha-verifier-826542474079.us-central1.run.app"
+leaderboard_api_url: "https://cartha-leaderboard-api-826542474079.us-central1.run.app"
 max_lock_days: 365
 token_decimals: 6
-score_temperature: 1000.0
 epoch_weekday: 4  # Friday
 epoch_time: 00:00 UTC
 ```
@@ -168,6 +192,7 @@ You can set these environment variables to configure the validator:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://cartha-verifier-826542474079.us-central1.run.app` |
+| `LEADERBOARD_API_URL` | Leaderboard API endpoint URL | `https://cartha-leaderboard-api-826542474079.us-central1.run.app` |
 | `CARTHA_NETUID` | Subnet netuid | `35` |
 
 ## Common Workflows

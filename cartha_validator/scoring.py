@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 
 import bittensor as bt
@@ -14,7 +13,11 @@ def score_entry(
     position: Mapping[str, Mapping[str, int]],
     settings: ValidatorSettings = DEFAULT_SETTINGS,
 ) -> float:
-    """Score a single miner entry by applying pool weights and lock-day boost."""
+    """Score a single miner entry by applying pool weights and lock-day boost.
+    
+    Returns the raw score directly, which will be normalized to weights later.
+    This preserves the full competitive differences between miners.
+    """
     raw_total = 0.0
     
     for pool_id, details in position.items():
@@ -42,21 +45,8 @@ def score_entry(
         bt.logging.debug("[SCORE CALC] Raw total is non-positive; returning score=0.0")
         return 0.0
 
-    temperature = settings.score_temperature
-    if temperature <= 0:
-        bt.logging.warning("score_temperature is non-positive; clamping raw total to [0,1].")
-        normalized = max(0.0, min(raw_total, 1.0))
-        bt.logging.debug(
-            f"[SCORE CALC] raw_total={raw_total:.6f} (clamped, temp={temperature}) → "
-            f"normalized_score={normalized:.6f}"
-        )
-        return normalized
-
-    normalized = 1.0 - math.exp(-raw_total / temperature)
-    normalized = max(0.0, min(normalized, 1.0))
     bt.logging.debug(
-        f"[SCORE CALC] raw_total={raw_total:.6f} temperature={temperature} → "
-        f"normalized_score={normalized:.6f} "
-        f"(formula: 1 - exp(-{raw_total:.6f}/{temperature}))"
+        f"[SCORE CALC] raw_total={raw_total:.6f} → score={raw_total:.6f} "
+        f"(raw score used directly, will be normalized to weights)"
     )
-    return normalized
+    return raw_total
