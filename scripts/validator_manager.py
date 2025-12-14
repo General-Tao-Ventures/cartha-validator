@@ -243,6 +243,73 @@ class ValidatorManager:
             )
             return False
 
+    def get_running_validator_version(self) -> str | None:
+        """
+        Extract the running validator version from its logs.
+        
+        Returns:
+            Version string if found, None otherwise
+        """
+        try:
+            # Get recent logs from PM2
+            logs = self.pm2_manager.get_logs(lines=200)
+            
+            # Look for version pattern: "Validator version: 1.0.1" or "__version__ = 1.0.1"
+            import re
+            patterns = [
+                r'Validator version:\s*([\d.]+)',
+                r'__version__\s*=\s*["\']([\d.]+)["\']',
+                r'version_key=(\d+)',  # Fallback: extract from version_key
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, logs)
+                if match:
+                    version = match.group(1)
+                    # If we got version_key, convert it back (e.g., 1001 -> 1.0.1)
+                    if pattern == patterns[2] and len(version) == 4:
+                        major = int(version[0])
+                        minor = int(version[1:3])
+                        patch = int(version[3])
+                        return f"{major}.{minor}.{patch}"
+                    return version
+            
+            return None
+        except Exception as e:
+            print(f"Warning: Could not extract running validator version: {e}", file=sys.stderr)
+            return None
+
+    def check_running_version_mismatch(self) -> bool:
+        """
+        Check if running validator version differs from local code version.
+        This handles cases where code was updated but validator wasn't restarted.
+        
+        Returns:
+            True if versions don't match and restart is needed, False otherwise
+        """
+        try:
+            local_version = get_version_from_pyproject()
+            running_version = self.get_running_validator_version()
+            
+            if running_version is None:
+                # Can't determine running version, assume it's fine
+                return False
+            
+            if local_version != running_version:
+                print(
+                    f"⚠ Version mismatch detected!\n"
+                    f"  Local code version: {local_version}\n"
+                    f"  Running validator version: {running_version}\n"
+                    f"  Restarting validator to sync versions...",
+                    file=sys.stderr
+                )
+                return True
+            
+            return False
+        except Exception as e:
+            print(f"Warning: Could not check version mismatch: {e}", file=sys.stderr)
+            return False
+
     def check_for_updates(self) -> tuple[bool, str | None]:
         """
         Check if a new release is available on GitHub.
@@ -384,7 +451,16 @@ class ValidatorManager:
 
         while True:
             try:
-                # Check for updates
+                # First, check if running validator version matches local code version
+                # This handles cases where code was updated but validator wasn't restarted
+                if self.check_running_version_mismatch():
+                    print("Restarting validator to sync with local code version...")
+                    self.pm2_manager.restart_validator()
+                    time.sleep(5)  # Wait for restart
+                    if not self.pm2_manager.is_running():
+                        print("Warning: Validator failed to restart after version sync", file=sys.stderr)
+                
+                # Check for updates from GitHub
                 update_available, latest_version = self.check_for_updates()
 
                 if update_available:
