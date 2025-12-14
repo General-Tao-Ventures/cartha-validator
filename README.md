@@ -132,3 +132,4 @@ uv run mypy cartha_validator
 ---
 
 **Made with ❤ by GTV**
+# Test change
