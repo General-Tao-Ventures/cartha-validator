@@ -193,19 +193,27 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            let mainVersion, stagingVersion, failureReason;
+            let mainVersion, prBranchVersion, failureReason;
             try {
               mainVersion = fs.readFileSync('main/pyproject.toml', 'utf8')
                 .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
-              stagingVersion = fs.readFileSync('staging/pyproject.toml', 'utf8')
+            } catch (e) {
+              console.error('Failed to read main version:', e.message);
+              mainVersion = 'unknown';
+            }
+            
+            try {
+              prBranchVersion = fs.readFileSync('pr-branch/pyproject.toml', 'utf8')
                 .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
             } catch (e) {
-              mainVersion = 'unknown';
-              stagingVersion = 'unknown';
+              console.error('Failed to read PR branch version:', e.message);
+              prBranchVersion = 'unknown';
             }
             
             // Get failure reason from step output
             failureReason = '${{ steps.failure_reason.outputs.reason }}' || '';
+            
+            const prBranch = context.payload.pull_request.head.ref;
             
             let body = `❌ **Version Check Failed**\n\n`;
             
@@ -215,13 +223,13 @@ jobs:
             
             body += `**Version Bump:**\n` +
                     `- Main version: \`${mainVersion}\`\n` +
-                    `- Staging version: \`${stagingVersion}\`\n\n` +
+                    `- PR branch (\`${prBranch}\`) version: \`${prBranchVersion}\`\n\n` +
                     `Please update the version in **BOTH** files before merging to main:\n\n` +
                     `1. \`pyproject.toml\` (under \`[project]\` section)\n` +
                     `2. \`cartha_validator/__init__.py\` (fallback \`__version__\`)\n\n` +
                     `**Requirements:**\n` +
                     `- Both files must have the **same version**\n` +
-                    `- The staging version must be **greater** than the main version\n` +
+                    `- The PR branch version must be **greater** than the main version\n` +
                     `- Use semantic versioning: \`major.minor.patch\`\n` +
                     `- Repository version_key must be >= subnet weights_version (netuid 35)\n\n` +
                     `Check the workflow logs above for detailed error messages.`;
