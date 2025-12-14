@@ -78,6 +78,7 @@ Scores are used directly without exponential normalization, ensuring that differ
 - **[Command Reference](docs/COMMANDS.md)** - Complete documentation for all command-line arguments
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - Deep dive into validator internals and design
 - **[Testnet Setup](docs/TESTNET_SETUP.md)** - Step-by-step testnet deployment guide
+- **[Version Control](docs/VERSION_CONTROL.md)** - Version management and CI/CD workflows
 - **[Feedback & Support](docs/FEEDBACK.md)** - Get help and provide feedback
 
 ## Security
@@ -110,6 +111,96 @@ Cartha Validator enforces strict security policies:
 - If the requested epoch isn't frozen yet, the verifier returns the last frozen epoch
 - Validator automatically uses the frozen epoch data for consistency
 - Logs epoch fallback events for transparency
+
+## Version Control & Auto-Updater
+
+Cartha Validator includes automated version management and update capabilities:
+
+### Version Management
+
+- **Semantic Versioning**: Uses semantic versioning (major.minor.patch) in `pyproject.toml`
+- **CI/CD Enforcement**: Version bumps are required when merging from `staging` to `main`
+- **Version Utilities**: Helper scripts for version management:
+  ```bash
+  # Get current version
+  python scripts/get_version.py
+
+  # Bump version (major, minor, or patch)
+  python scripts/bump_version.py patch
+  python scripts/bump_version.py minor
+  python scripts/bump_version.py major
+  ```
+
+### Auto-Updater System
+
+The validator includes an automated update system that:
+
+- **Checks GitHub Releases**: Automatically checks for new releases on GitHub
+- **PM2 Process Management**: Manages validator process via PM2 (survives SSH disconnect)
+- **Automatic Updates**: Pulls latest code, installs dependencies, and restarts validator
+- **Environment Validation**: Validates `.env` file before restarting
+- **Failure Handling**: Keeps validator running on current version if update fails
+
+#### Initial Setup
+
+```bash
+# One-time installation
+cd cartha-validator
+chmod +x scripts/install.sh
+./scripts/install.sh
+```
+
+This will:
+- Install PM2 globally
+- Install Python dependencies
+- Create PM2 ecosystem configuration
+- Set up PM2 to start on system boot
+- Start both validator manager and validator processes
+
+#### Managing Validator
+
+```bash
+# Check status of both processes
+pm2 status
+
+# View validator logs locally
+pm2 logs cartha-validator
+
+# View manager logs
+pm2 logs cartha-validator-manager
+
+# Manual restart (if needed)
+pm2 restart cartha-validator
+
+# Stop both processes
+pm2 stop all
+
+# Start both processes
+pm2 start ecosystem.config.js
+```
+
+**Note**: The validator manager automatically handles updates. You typically only need to interact with PM2 for manual restarts or troubleshooting.
+
+#### Configuration
+
+Configure the auto-updater via `scripts/update_config.yaml`:
+
+```yaml
+github_repo: "General-Tao-Ventures/cartha-validator"
+check_interval: 3600  # Check every hour
+pm2_app_name: "cartha-validator"
+```
+
+See `scripts/update_config.yaml` for all configuration options.
+
+### Accessing Logs
+
+**Validators** (local access):
+```bash
+pm2 logs cartha-validator
+pm2 logs cartha-validator --err  # Error logs only
+pm2 logs cartha-validator-manager  # Manager logs
+```
 
 ## Development
 

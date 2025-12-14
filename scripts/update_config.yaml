@@ -1,0 +1,18 @@
+# Auto-Updater Configuration File
+# Copy this file and customize for your validator setup
+
+# GitHub Configuration
+github_repo: "General-Tao-Ventures/cartha-validator"  # GitHub repository (owner/repo format)
+check_interval: 3600  # Update check interval in seconds (default: 1 hour)
+
+# PM2 Configuration
+pm2_app_name: "cartha-validator"  # PM2 process name for validator
+validator_command: "uv run python -m cartha_validator.main"
+validator_args: ["--wallet-name", "cold", "--wallet-hotkey", "hot", "--netuid", "35"]
+log_file: "/var/log/cartha-validator-updater.log"
+pm2_log_dir: "~/.pm2/logs"  # PM2 log directory
+
+# Validator Identification (for logging)
+validator:
+  hotkey_ss58: ""  # Validator hotkey SS58 address (auto-resolved if not set)
+  netuid: 35  # Subnet UID (35 for mainnet, 78 for testnet)
