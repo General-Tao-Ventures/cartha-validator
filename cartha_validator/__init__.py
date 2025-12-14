@@ -1,11 +1,6 @@
 """Validator tooling for Cartha."""
 
-from importlib.metadata import PackageNotFoundError, version
-
-try:
-    __version__ = version("cartha-subnet-validator")
-except PackageNotFoundError:  # pragma: no cover
-    __version__ = "1.0.0"
+__version__ = "1.0.0"
 
 # Convert version string (e.g., "1.0.0") to spec_version integer (e.g., 1000)
 # Format: 1000 * major + 10 * minor + 1 * patch

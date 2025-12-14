@@ -1,0 +1,123 @@
+name: Version Bump Check
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  check-version-bump:
+    name: Verify Version Bump (staging → main)
+    runs-on: ubuntu-latest
+    
+    # Only run this check if the PR is from staging branch
+    if: github.head_ref == 'staging'
+    
+    steps:
+      - name: Checkout PR branch (staging)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          path: staging
+      
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      
+      - name: Install dependencies
+        run: |
+          cd staging
+          uv sync --no-dev
+      
+      - name: Check version bump
+        run: |
+          python staging/.github/scripts/check_version_bump.py \
+            main/pyproject.toml \
+            main/cartha_validator/__init__.py \
+            staging/pyproject.toml \
+            staging/cartha_validator/__init__.py
+      
+      - name: Check weights_version compatibility
+        run: |
+          cd staging
+          uv run python .github/scripts/check_weights_version.py \
+            --network finney \
+            --netuid 35
+        continue-on-error: false
+      
+      - name: Comment on PR (success)
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const mainVersion = fs.readFileSync('main/pyproject.toml', 'utf8')
+              .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
+            const stagingVersion = fs.readFileSync('staging/pyproject.toml', 'utf8')
+              .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `✅ **Version Checks Passed**\n\n` +
+                    `**Version Bump:**\n` +
+                    `- Main version: \`${mainVersion}\`\n` +
+                    `- Staging version: \`${stagingVersion}\`\n\n` +
+                    `The version has been properly incremented in both:\n` +
+                    `  - \`pyproject.toml\`\n` +
+                    `  - \`cartha_validator/__init__.py\`\n\n` +
+                    `✓ Both files are consistent within each branch.\n\n` +
+                    `**Weights Version:**\n` +
+                    `✓ Repository version_key >= subnet weights_version (netuid 35)\n` +
+                    `✓ Validators can publish weights to the subnet.`
+            });
+      
+      - name: Comment on PR (failure)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let mainVersion, stagingVersion;
+            try {
+              mainVersion = fs.readFileSync('main/pyproject.toml', 'utf8')
+                .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
+              stagingVersion = fs.readFileSync('staging/pyproject.toml', 'utf8')
+                .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
+            } catch (e) {
+              mainVersion = 'unknown';
+              stagingVersion = 'unknown';
+            }
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `❌ **Version Check Failed**\n\n` +
+                    `**Version Bump:**\n` +
+                    `- Main version: \`${mainVersion}\`\n` +
+                    `- Staging version: \`${stagingVersion}\`\n\n` +
+                    `Please update the version in **BOTH** files before merging to main:\n\n` +
+                    `1. \`pyproject.toml\` (under \`[project]\` section)\n` +
+                    `2. \`cartha_validator/__init__.py\` (fallback \`__version__\`)\n\n` +
+                    `**Requirements:**\n` +
+                    `- Both files must have the **same version**\n` +
+                    `- The staging version must be **greater** than the main version\n` +
+                    `- Use semantic versioning: \`major.minor.patch\`\n` +
+                    `- Repository version_key must be >= subnet weights_version (netuid 35)\n\n` +
+                    `Check the workflow logs for detailed error messages.`
+            });
