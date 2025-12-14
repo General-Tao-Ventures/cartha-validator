@@ -62,11 +62,19 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const reason = `${{ steps.branch_check.outputs.reason }}`;
             const sourceBranch = context.payload.pull_request.head.ref;
             const targetBranch = context.payload.pull_request.base.ref;
             
-            const body = reason || `❌ **Branch Protection Violation**\n\nOnly the \`staging\` branch can be merged into \`main\`.\n\n**Current PR:**\n- Source branch: \`${sourceBranch}\`\n- Target branch: \`${targetBranch}\`\n\n**Required:**\n- Source branch must be \`staging\`\n- Target branch must be \`main\`\n\nPlease create a PR from \`staging\` to \`main\` instead.`;
+            const body = `## Verify Version Bump (PR branch → main) summary\n\n` +
+                        `❌ **Branch Protection Violation**\n\n` +
+                        `Only the \`staging\` branch can be merged into \`main\`.\n\n` +
+                        `**Current PR:**\n\n` +
+                        `- Source branch: \`${sourceBranch}\`\n` +
+                        `- Target branch: \`${targetBranch}\`\n\n` +
+                        `**Required:**\n\n` +
+                        `- Source branch must be \`staging\`\n` +
+                        `- Target branch must be \`main\`\n\n` +
+                        `Please create a PR from \`staging\` to \`main\` instead.`;
             
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
