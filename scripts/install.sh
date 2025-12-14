@@ -1,0 +1,366 @@
+#!/bin/bash
+# Interactive installation script for validator manager
+# One-stop setup for validators
+
+set -e  # Exit on error
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "=========================================="
+echo "Cartha Validator Manager Installation"
+echo "=========================================="
+echo ""
+
+# Check if running as root
+if [ "$EUID" -eq 0 ]; then
+    echo "Warning: Running as root. Consider using a non-root user."
+    echo ""
+fi
+
+# 1. Check Node.js and install PM2
+echo "Step 1: Installing PM2..."
+if ! command -v node &> /dev/null; then
+    echo "Error: Node.js is not installed."
+    echo "Please install Node.js first: https://nodejs.org/"
+    exit 1
+fi
+
+if ! command -v pm2 &> /dev/null; then
+    echo "Installing PM2 globally..."
+    npm install -g pm2
+    echo "✓ PM2 installed"
+else
+    echo "✓ PM2 is already installed: $(pm2 --version)"
+fi
+echo ""
+
+# 2. Check Python and uv
+echo "Step 2: Checking Python and uv..."
+if ! command -v python3 &> /dev/null; then
+    echo "Error: Python 3 is not installed."
+    exit 1
+fi
+
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is not installed."
+    echo "Install with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+echo "✓ Python: $(python3 --version)"
+echo "✓ uv: $(uv --version)"
+echo ""
+
+# 3. Install Python dependencies
+echo "Step 3: Installing Python dependencies..."
+cd "$PROJECT_ROOT"
+uv sync
+echo "✓ Dependencies installed"
+echo ""
+
+# 4. Update ecosystem.config.js with current working directory
+echo "Step 4: Configuring PM2 ecosystem..."
+ECOSYSTEM_FILE="$SCRIPT_DIR/ecosystem.config.js"
+if [ ! -f "$ECOSYSTEM_FILE" ]; then
+    echo "Error: ecosystem.config.js not found at $ECOSYSTEM_FILE"
+    exit 1
+fi
+
+# Update cwd in ecosystem.config.js
+sed -i.bak "s|'$PROJECT_ROOT'|'$PROJECT_ROOT'|g" "$ECOSYSTEM_FILE" 2>/dev/null || true
+sed -i.bak "s|process.cwd()|'$PROJECT_ROOT'|g" "$ECOSYSTEM_FILE" 2>/dev/null || true
+rm -f "$ECOSYSTEM_FILE.bak" 2>/dev/null || true
+echo "✓ Ecosystem config ready"
+echo ""
+
+# 5. Interactive configuration
+echo "=========================================="
+echo "Configuration"
+echo "=========================================="
+echo ""
+
+# Prompt for wallet name
+read -p "Enter your wallet name (coldkey): " WALLET_NAME
+if [ -z "$WALLET_NAME" ]; then
+    echo "Error: Wallet name is required"
+    exit 1
+fi
+
+# Prompt for hotkey
+read -p "Enter your hotkey name: " WALLET_HOTKEY
+if [ -z "$WALLET_HOTKEY" ]; then
+    echo "Error: Hotkey name is required"
+    exit 1
+fi
+
+# Prompt for netuid
+echo ""
+echo "Select network:"
+echo "  1) Mainnet (netuid 35)"
+echo "  2) Testnet (netuid 78)"
+read -p "Enter choice [1]: " NETUID_CHOICE
+NETUID_CHOICE=${NETUID_CHOICE:-1}
+
+if [ "$NETUID_CHOICE" = "2" ]; then
+    NETUID="78"
+else
+    NETUID="35"
+fi
+
+echo ""
+echo "Optional flags:"
+read -p "Enable --dry-run mode? [y/N]: " DRY_RUN
+DRY_RUN=${DRY_RUN:-N}
+
+echo ""
+echo "✓ Configuration:"
+echo "  Wallet: $WALLET_NAME"
+echo "  Hotkey: $WALLET_HOTKEY"
+echo "  NetUID: $NETUID"
+echo "  Use verified amounts: enabled (hardcoded)"
+[[ "$DRY_RUN" =~ ^[Yy]$ ]] && echo "  Dry-run: enabled"
+echo ""
+
+# 6. Update ecosystem.config.js with wallet/hotkey/netuid
+echo "Step 5: Updating ecosystem.config.js..."
+# Create a backup
+cp "$ECOSYSTEM_FILE" "$ECOSYSTEM_FILE.backup"
+
+# Use Python to update the JavaScript file properly
+python3 << EOF
+import re
+
+ecosystem_file = "$ECOSYSTEM_FILE"
+wallet_name = "$WALLET_NAME"
+wallet_hotkey = "$WALLET_HOTKEY"
+netuid = "$NETUID"
+dry_run = "$DRY_RUN"
+
+# Read the file
+with open(ecosystem_file, 'r') as f:
+    content = f.read()
+
+# Build args string with proper flags
+# For testnet (netuid 78), add --subtensor.network test
+args_parts = [
+    "run python -m cartha_validator.main",
+    f"--wallet-name {wallet_name}",
+    f"--wallet-hotkey {wallet_hotkey}",
+    f"--netuid {netuid}",
+    "--use-verified-amounts",  # Always enabled (hardcoded)
+]
+
+# Add --subtensor.network test for testnet
+if netuid == "78":
+    args_parts.append("--subtensor.network test")
+
+# Add optional flags
+if dry_run.upper() == "Y":
+    args_parts.append("--dry-run")
+
+# Join all args
+new_args_str = " ".join(args_parts)
+
+# Replace the args line - match the entire line including the JavaScript concatenation
+# Try multiple patterns to catch different formats (with or without --use-verified-amounts)
+old_patterns = [
+    # Pattern 1: Original template format with process.env fallbacks
+    r"      args: 'run python -m cartha_validator\.main ' \+ \(process\.env\.WALLET_NAME \|\| '[^']+'\) \+ ' --wallet-hotkey ' \+ \(process\.env\.WALLET_HOTKEY \|\| '[^']+'\) \+ ' --netuid ' \+ \(process\.env\.NETUID \|\| '\d+'\)[^']*',",
+    # Pattern 2: Already has --use-verified-amounts
+    r"      args: 'run python -m cartha_validator\.main ' \+ \(process\.env\.WALLET_NAME \|\| '[^']+'\) \+ ' --wallet-hotkey ' \+ \(process\.env\.WALLET_HOTKEY \|\| '[^']+'\) \+ ' --netuid ' \+ \(process\.env\.NETUID \|\| '\d+'\) \+ ' --use-verified-amounts',",
+    # Pattern 3: Any args line with cartha_validator.main
+    r"      args: '[^']*cartha_validator\.main[^']*',",
+]
+
+new_args = f"      args: '{new_args_str}',"
+
+# Try each pattern until one matches
+replaced = False
+for old_pattern in old_patterns:
+    if re.search(old_pattern, content):
+        content = re.sub(old_pattern, new_args, content)
+        replaced = True
+        break
+
+if not replaced:
+    # If no pattern matched, try to find the args line and replace it manually
+    lines = content.split('\n')
+    for i, line in enumerate(lines):
+        if 'args:' in line and 'cartha_validator.main' in line:
+            lines[i] = f"      {new_args}"
+            content = '\n'.join(lines)
+            replaced = True
+            break
+
+if not replaced:
+    print("Warning: Could not find args line to replace. Please update ecosystem.config.js manually.")
+    print(f"Expected pattern: args: 'run python -m cartha_validator.main ...'")
+
+# Write back
+with open(ecosystem_file, 'w') as f:
+    f.write(content)
+
+print("✓ Updated ecosystem.config.js with your wallet configuration")
+print("  Added --use-verified-amounts flag (hardcoded)")
+if netuid == "78":
+    print("  Added --subtensor.network test for testnet")
+if dry_run.upper() == "Y":
+    print("  Added --dry-run flag")
+EOF
+
+echo ""
+
+# Extract hotkey SS58 address for validator manager
+echo "Step 5.5: Resolving hotkey SS58 address..."
+HOTKEY_SS58=$(python3 << EOF
+import sys
+try:
+    import bittensor as bt
+    wallet = bt.wallet(name="$WALLET_NAME", hotkey="$WALLET_HOTKEY")
+    hotkey_ss58 = wallet.hotkey.ss58_address
+    print(hotkey_ss58)
+except Exception as e:
+    print(f"⚠ Warning: Could not resolve hotkey SS58: {e}", file=sys.stderr)
+    print("  Validator manager will skip UID resolution", file=sys.stderr)
+    sys.exit(0)  # Non-fatal, continue installation
+EOF
+)
+
+if [ -n "$HOTKEY_SS58" ]; then
+    echo "✓ Resolved hotkey SS58: $HOTKEY_SS58"
+    
+    # Update ecosystem.config.js to add hotkey-ss58 and netuid to validator manager args
+    python3 << EOF
+import re
+
+ecosystem_file = "$ECOSYSTEM_FILE"
+hotkey_ss58 = "$HOTKEY_SS58"
+netuid = "$NETUID"
+
+# Read the file
+with open(ecosystem_file, 'r') as f:
+    content = f.read()
+
+# Update validator manager args to include --hotkey-ss58 and --netuid
+# Find the args line for cartha-validator-manager and replace it
+lines = content.split('\n')
+in_manager_section = False
+updated = False
+
+for i, line in enumerate(lines):
+    if "name: 'cartha-validator-manager'" in line:
+        in_manager_section = True
+    elif in_manager_section and "args:" in line:
+        # Replace the args line
+        lines[i] = re.sub(r"args: '[^']*'", f"args: '--hotkey-ss58 {hotkey_ss58} --netuid {netuid}'", line)
+        updated = True
+        break
+    elif in_manager_section and line.strip().startswith('}'):
+        # End of manager section, stop looking
+        break
+
+if updated:
+    content = '\n'.join(lines)
+    print("✓ Updated validator manager args with hotkey SS58 and netuid")
+else:
+    print("⚠ Warning: Could not find validator manager args to update", file=sys.stderr)
+
+# Write back
+with open(ecosystem_file, 'w') as f:
+    f.write(content)
+EOF
+else
+    echo "⚠ Warning: Could not resolve hotkey SS58. Validator manager will skip UID resolution."
+fi
+
+echo ""
+
+# 7. Optional: RPC URL configuration
+echo "Step 6: Optional RPC configuration..."
+ENV_FILE="$PROJECT_ROOT/.env"
+
+echo ""
+echo "Default RPC URL: https://sepolia.base.org"
+echo "You can override this if you have your own RPC node."
+echo ""
+read -p "Do you want to use a custom RPC URL? [y/N]: " OVERRIDE_RPC
+OVERRIDE_RPC=${OVERRIDE_RPC:-N}
+
+if [[ "$OVERRIDE_RPC" =~ ^[Yy]$ ]]; then
+    read -p "Enter your custom RPC URL: " PARENT_VAULT_RPC_URL
+    
+    if [ -n "$PARENT_VAULT_RPC_URL" ]; then
+        # Write/update .env file
+        {
+            echo "# Cartha Validator Configuration"
+            echo "# Generated by install.sh"
+            echo ""
+            echo "PARENT_VAULT_RPC_URL=$PARENT_VAULT_RPC_URL"
+        } > "$ENV_FILE"
+        echo "✓ Created/updated .env file with custom RPC URL"
+    fi
+else
+    # Create empty .env file or leave existing (will use defaults)
+    if [ ! -f "$ENV_FILE" ]; then
+        touch "$ENV_FILE"
+        echo "# Cartha Validator Configuration" > "$ENV_FILE"
+        echo "# Using default RPC URL" >> "$ENV_FILE"
+    fi
+fi
+echo ""
+
+
+# 8. Setup PM2 startup
+echo "Step 7: Setting up PM2 startup..."
+pm2 startup > /tmp/pm2_startup.sh 2>&1 || true
+if [ -f /tmp/pm2_startup.sh ]; then
+    STARTUP_CMD=$(cat /tmp/pm2_startup.sh | grep -E "sudo|pm2" | head -1)
+    if [ -n "$STARTUP_CMD" ]; then
+        echo "PM2 startup command generated (save this for later):"
+        echo "  $STARTUP_CMD"
+        echo ""
+    fi
+fi
+
+# 10. Ask if user wants to start validator now
+echo "=========================================="
+echo "Installation Complete!"
+echo "=========================================="
+echo ""
+read -p "Do you want to start the validator now? [Y/n]: " START_NOW
+START_NOW=${START_NOW:-Y}
+
+if [[ "$START_NOW" =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "Starting validator manager..."
+    pm2 start "$ECOSYSTEM_FILE"
+    pm2 save
+    echo ""
+    echo "✓ Validator started!"
+    echo ""
+    echo "Check status with:"
+    echo "  pm2 status"
+    echo ""
+    echo "View logs with:"
+    echo "  pm2 logs cartha-validator"
+    echo "  pm2 logs cartha-validator-manager"
+    echo ""
+else
+    echo ""
+    echo "To start the validator later, run:"
+    echo "  pm2 start $ECOSYSTEM_FILE"
+    echo "  pm2 save"
+    echo ""
+fi
+
+echo "Configuration saved:"
+echo "  - Wallet: $WALLET_NAME"
+echo "  - Hotkey: $WALLET_HOTKEY"
+echo "  - NetUID: $NETUID"
+echo "  - Ecosystem config: $ECOSYSTEM_FILE"
+[ -f "$ENV_FILE" ] && echo "  - Environment file: $ENV_FILE"
+echo ""
+echo "The validator manager will:"
+echo "  - Keep the validator running (survives SSH disconnect)"
+echo "  - Check for GitHub releases and auto-update"
+echo ""
