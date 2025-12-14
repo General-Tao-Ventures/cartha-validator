@@ -8,7 +8,7 @@ on:
 
 jobs:
   check-version-bump:
-    name: Verify Version Bump (staging → main)
+    name: Verify Version Bump (PR branch → main)
     runs-on: ubuntu-latest
     
     # Permissions needed to comment on PRs
@@ -17,51 +17,112 @@ jobs:
       pull-requests: write
       issues: write
     
-    # Only run this check if the PR is from staging branch
-    if: github.head_ref == 'staging'
-    
     steps:
-      - name: Checkout PR branch (staging)
+      - name: Check if source branch is staging
+        id: branch_check
+        run: |
+          SOURCE_BRANCH="${{ github.head_ref }}"
+          TARGET_BRANCH="${{ github.base_ref }}"
+          
+          if [ "$TARGET_BRANCH" != "main" ]; then
+            echo "This workflow only runs for PRs targeting main branch."
+            exit 0  # Skip if not targeting main
+          fi
+          
+          if [ "$SOURCE_BRANCH" != "staging" ]; then
+            echo "❌ **Branch Protection Violation**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Only the \`staging\` branch can be merged into \`main\`." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Current PR:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Source branch: \`${SOURCE_BRANCH}\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Target branch: \`${TARGET_BRANCH}\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Required:**" >> $GITHUB_STEP_SUMMARY
+            echo "- Source branch must be \`staging\`" >> $GITHUB_STEP_SUMMARY
+            echo "- Target branch must be \`main\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please create a PR from \`staging\` to \`main\` instead." >> $GITHUB_STEP_SUMMARY
+            
+            REASON="❌ **Branch Protection Violation**\n\nOnly the \`staging\` branch can be merged into \`main\`.\n\n**Current PR:**\n- Source branch: \`${SOURCE_BRANCH}\`\n- Target branch: \`${TARGET_BRANCH}\`\n\n**Required:**\n- Source branch must be \`staging\`\n- Target branch must be \`main\`\n\nPlease create a PR from \`staging\` to \`main\` instead."
+            
+            echo "reason<<EOF" >> $GITHUB_OUTPUT
+            echo -e "$REASON" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            
+            echo "::error::Branch protection violation: Only staging branch can merge to main"
+            exit 1
+          fi
+          
+          echo "✓ Source branch is staging, proceeding with version checks..."
+      
+      - name: Comment on PR (branch protection failure)
+        if: steps.branch_check.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const reason = `${{ steps.branch_check.outputs.reason }}`;
+            const sourceBranch = context.payload.pull_request.head.ref;
+            const targetBranch = context.payload.pull_request.base.ref;
+            
+            const body = reason || `❌ **Branch Protection Violation**\n\nOnly the \`staging\` branch can be merged into \`main\`.\n\n**Current PR:**\n- Source branch: \`${sourceBranch}\`\n- Target branch: \`${targetBranch}\`\n\n**Required:**\n- Source branch must be \`staging\`\n- Target branch must be \`main\`\n\nPlease create a PR from \`staging\` to \`main\` instead.`;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+      
+      - name: Checkout PR branch
+        if: steps.branch_check.outcome == 'success'
         uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-          path: staging
+          path: pr-branch
       
       - name: Checkout main branch
+        if: steps.branch_check.outcome == 'success'
         uses: actions/checkout@v4
         with:
           ref: main
           path: main
       
       - name: Set up Python
+        if: steps.branch_check.outcome == 'success'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
       - name: Install uv
+        if: steps.branch_check.outcome == 'success'
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
       
       - name: Install dependencies
+        if: steps.branch_check.outcome == 'success'
         run: |
-          cd staging
+          cd pr-branch
           uv sync --no-dev
       
       - name: Check version bump
+        if: steps.branch_check.outcome == 'success'
         id: version_check
         run: |
-          python staging/.github/scripts/check_version_bump.py \
+          python pr-branch/.github/scripts/check_version_bump.py \
             main/pyproject.toml \
             main/cartha_validator/__init__.py \
-            staging/pyproject.toml \
-            staging/cartha_validator/__init__.py
+            pr-branch/pyproject.toml \
+            pr-branch/cartha_validator/__init__.py
         continue-on-error: true
         
       - name: Check weights_version compatibility
+        if: steps.branch_check.outcome == 'success'
         id: weights_check
         run: |
-          cd staging
+          cd pr-branch
           uv run python .github/scripts/check_weights_version.py \
             --network finney \
             --netuid 35
@@ -69,7 +130,7 @@ jobs:
       
       - name: Determine failure reason
         id: failure_reason
-        if: failure() || steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure'
+        if: steps.branch_check.outcome == 'success' && (failure() || steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure')
         run: |
           REASON=""
           if [ "${{ steps.version_check.outcome }}" == "failure" ]; then
@@ -83,21 +144,22 @@ jobs:
           echo "EOF" >> $GITHUB_OUTPUT
       
       - name: Fail if any check failed
-        if: steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure'
+        if: steps.branch_check.outcome == 'success' && (steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure')
         run: |
           echo "One or more checks failed. See details above."
           exit 1
       
       - name: Comment on PR (success)
-        if: success()
+        if: steps.branch_check.outcome == 'success' && success()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const mainVersion = fs.readFileSync('main/pyproject.toml', 'utf8')
               .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
-            const stagingVersion = fs.readFileSync('staging/pyproject.toml', 'utf8')
+            const prVersion = fs.readFileSync('pr-branch/pyproject.toml', 'utf8')
               .match(/^version\s*=\s*["']([^"']+)["']/m)[1];
+            const prBranch = context.payload.pull_request.head.ref;
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -106,7 +168,7 @@ jobs:
               body: `✅ **Version Checks Passed**\n\n` +
                     `**Version Bump:**\n` +
                     `- Main version: \`${mainVersion}\`\n` +
-                    `- Staging version: \`${stagingVersion}\`\n\n` +
+                    `- PR branch (${prBranch}) version: \`${prVersion}\`\n\n` +
                     `The version has been properly incremented in both:\n` +
                     `  - \`pyproject.toml\`\n` +
                     `  - \`cartha_validator/__init__.py\`\n\n` +
@@ -117,7 +179,7 @@ jobs:
             });
       
       - name: Comment on PR (failure)
-        if: failure() || steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure'
+        if: steps.branch_check.outcome == 'success' && (failure() || steps.version_check.outcome == 'failure' || steps.weights_check.outcome == 'failure')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
