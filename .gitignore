@@ -31,3 +31,4 @@ dist/
 validator_logs/
 
 uv.lock
+*.lock

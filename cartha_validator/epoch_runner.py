@@ -387,18 +387,63 @@ def run_epoch(
         / f"weights_{epoch_version.replace(':', '-').replace('T', '_').replace('Z', '')}_{timestamp}.json"
     )
 
+    # Calculate emissions per day for each miner (weight * daily total emissions)
+    daily_emissions = settings.daily_alpha_emissions
+    
     ranking_payload = [
         {
             "uid": item["uid"],
             "hotkey": item["hotkey"],
-            "slot_uid": item.get("slot_uid"),
+            "slot_uid": str(item.get("slot_uid") or item["uid"]),  # Convert to string for API
             "score": round(item["score"], 6),  # Raw score (for weight calculation)
             "display_score": item.get("display_score", round(item["score"], 2)),  # Normalized 0-1000 for display
             "weight": round(item["weight"], 6),
+            "emissions_per_day": round(item["weight"] * daily_emissions, 6),  # Alpha emissions per day
             "positions": format_positions(item["positions"], result["unit"]),
         }
         for item in result["ranking"]
     ]
+    
+    # Add trader rewards pool to ranking if it received weight but isn't in ranking
+    # (happens when trader pool has no verified positions/score=0)
+    trader_pool_hotkey = settings.trader_rewards_pool_hotkey
+    trader_pool_weight = settings.trader_rewards_pool_weight
+    
+    if trader_pool_hotkey and trader_pool_weight > 0:
+        # Check if trader pool is already in ranking
+        trader_in_ranking = any(
+            item.get("hotkey") == trader_pool_hotkey for item in ranking_payload
+        )
+        
+        if not trader_in_ranking and result.get("weights"):
+            # Try to find trader pool UID in weights
+            try:
+                trader_pool_uid = subtensor.get_uid_for_hotkey_on_subnet(
+                    hotkey_ss58=trader_pool_hotkey,
+                    netuid=settings.netuid
+                )
+                
+                if trader_pool_uid is not None and trader_pool_uid in result["weights"]:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_MAGENTA}[{settings.trader_rewards_pool_name}]{ANSI_RESET} "
+                        f"Adding to leaderboard ranking (UID {trader_pool_uid}, weight={trader_pool_weight:.6f})"
+                    )
+                    trader_weight = result["weights"][trader_pool_uid]
+                    ranking_payload.append({
+                        "uid": trader_pool_uid,
+                        "hotkey": trader_pool_hotkey,
+                        "slot_uid": str(trader_pool_uid),  # Convert to string for API
+                        "score": 0.0,
+                        "display_score": 0.0,
+                        "weight": round(trader_weight, 6),
+                        "emissions_per_day": round(trader_weight * daily_emissions, 6),
+                        "positions": {},
+                    })
+            except Exception as e:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}[TRADER POOL]{ANSI_RESET} "
+                    f"Failed to add to leaderboard ranking: {e}"
+                )
 
     log_entry = {
         "epoch_version": epoch_version,

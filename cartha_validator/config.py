@@ -26,6 +26,14 @@ DEFAULT_PARENT_VAULT_ADDRESS = "0x0dB1218cbCFf1D49181cc810a2b0D54D44652A8d"
 # Default public Base Sepolia RPC endpoint
 DEFAULT_BASE_SEPOLIA_RPC_URL = "https://sepolia.base.org"
 
+# Trader Rewards Pool Configuration
+TRADER_REWARDS_POOL_HOTKEY = "5DJnFDuAbEHZ11fTimHG3y8vBmM9vkJRb3ATREmAoE47iaRi"
+TRADER_REWARDS_POOL_WEIGHT = 0.243902  # 24.3902% fixed allocation
+TRADER_REWARDS_POOL_NAME = "Cartha's Trader Rewards Pool"
+
+# Daily Emissions Configuration
+DAILY_ALPHA_EMISSIONS = 2952.0  # Total alpha emissions per day across all miners
+
 
 def load_env_file() -> None:
     """Load environment variables from .env file if it exists."""
@@ -106,6 +114,24 @@ class ValidatorSettings(BaseModel):
     leaderboard_api_url: str | None = Field(
         default=DEFAULT_LEADERBOARD_API_URL,
         description="Leaderboard API URL for submitting rankings (default: production URL)",
+    )
+    # Trader Rewards Pool settings
+    trader_rewards_pool_hotkey: str = Field(
+        default=TRADER_REWARDS_POOL_HOTKEY,
+        description="Hotkey for Cartha's Trader Rewards Pool (receives fixed weight allocation)",
+    )
+    trader_rewards_pool_weight: float = Field(
+        default=TRADER_REWARDS_POOL_WEIGHT,
+        description="Fixed weight allocation for trader rewards pool (default: 0.243902 = 24.3902%)",
+    )
+    trader_rewards_pool_name: str = Field(
+        default=TRADER_REWARDS_POOL_NAME,
+        description="Display name for trader rewards pool in logs",
+    )
+    # Emissions configuration
+    daily_alpha_emissions: float = Field(
+        default=DAILY_ALPHA_EMISSIONS,
+        description="Total alpha emissions per day distributed across all miners",
     )
 
 
