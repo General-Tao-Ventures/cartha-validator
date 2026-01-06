@@ -15,6 +15,7 @@ from .logging import (
     ANSI_CYAN,
     ANSI_DIM,
     ANSI_GREEN,
+    ANSI_MAGENTA,
     ANSI_RED,
     ANSI_RESET,
     ANSI_YELLOW,
@@ -26,14 +27,80 @@ from .logging import (
 )
 
 
-def _normalize(scores: Mapping[int, float]) -> dict[int, float]:
-    """Normalize scores into weights that sum to 1 and clamp negatives."""
+def _normalize(
+    scores: Mapping[int, float],
+    trader_pool_uid: int | None = None,
+    trader_pool_weight: float = 0.0,
+) -> dict[int, float]:
+    """Normalize scores into weights that sum to 1, with optional fixed trader pool allocation.
+    
+    Args:
+        scores: Mapping of UID to score
+        trader_pool_uid: Optional UID of trader rewards pool (receives fixed weight)
+        trader_pool_weight: Fixed weight for trader pool (e.g., 0.243902 for 24.3902%)
+    
+    Returns:
+        Normalized weights dict
+    """
+    # Validate trader pool weight
+    if trader_pool_weight < 0 or trader_pool_weight >= 1:
+        bt.logging.error(
+            f"{ANSI_BOLD}{ANSI_RED}Invalid trader pool weight: {trader_pool_weight:.6f}{ANSI_RESET} "
+            f"(must be >= 0 and < 1). Setting to 0."
+        )
+        trader_pool_weight = 0.0
+    
+    # Clamp negative scores
     positive = {uid: max(0.0, float(score)) for uid, score in scores.items()}
-    total = sum(positive.values())
-    if total <= 0:
-        bt.logging.warning("Total score non-positive; emitting zeroed weights.")
-        return {uid: 0.0 for uid in positive}
-    return {uid: value / total for uid, value in positive.items()}
+    
+    # Calculate remaining weight for miners (after trader pool allocation)
+    remaining_weight = 1.0 - trader_pool_weight
+    
+    # If trader pool is in the scores, we'll override its weight
+    # Otherwise, we'll add it separately
+    miner_scores = {uid: score for uid, score in positive.items() if uid != trader_pool_uid}
+    
+    # Normalize miner scores to fill remaining weight
+    miner_total = sum(miner_scores.values())
+    
+    weights: dict[int, float] = {}
+    
+    if miner_total <= 0:
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}Total miner score non-positive; "
+            f"distributing remaining weight equally.{ANSI_RESET}"
+        )
+        # If no valid miner scores, distribute remaining weight equally
+        if miner_scores:
+            equal_weight = remaining_weight / len(miner_scores)
+            weights = {uid: equal_weight for uid in miner_scores}
+        else:
+            weights = {}
+    else:
+        # Normalize miners to fill remaining weight (e.g., 75.6098% when trader pool takes 24.3902%)
+        weights = {
+            uid: (score / miner_total) * remaining_weight
+            for uid, score in miner_scores.items()
+        }
+    
+    # Add trader pool with fixed weight
+    if trader_pool_uid is not None and trader_pool_weight > 0:
+        weights[trader_pool_uid] = trader_pool_weight
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}[TRADER POOL]{ANSI_RESET} "
+            f"Allocated fixed weight: {ANSI_BOLD}{trader_pool_weight:.6f}{ANSI_RESET} "
+            f"({trader_pool_weight * 100:.4f}%) to UID {ANSI_BOLD}{trader_pool_uid}{ANSI_RESET}"
+        )
+    
+    # Verify weights sum to 1.0 (within floating point tolerance)
+    total_weight = sum(weights.values())
+    if abs(total_weight - 1.0) > 1e-6:
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}Weight sum verification failed:{ANSI_RESET} "
+            f"total={total_weight:.10f} (expected 1.0, diff={abs(total_weight - 1.0):.10f})"
+        )
+    
+    return weights
 
 
 class SetWeightsTimeoutError(Exception):
@@ -127,7 +194,48 @@ def publish(
         )
         return {}
 
-    weights = _normalize(scores)
+    # Initialize subtensor early to resolve trader pool UID
+    subtensor = subtensor or bt.subtensor()
+    
+    # Resolve trader rewards pool UID from hotkey
+    trader_pool_uid: int | None = None
+    trader_pool_weight = settings.trader_rewards_pool_weight
+    trader_pool_hotkey = settings.trader_rewards_pool_hotkey
+    
+    if trader_pool_hotkey and trader_pool_weight > 0:
+        try:
+            trader_pool_uid = subtensor.get_uid_for_hotkey_on_subnet(
+                hotkey_ss58=trader_pool_hotkey,
+                netuid=settings.netuid
+            )
+            if trader_pool_uid is None or trader_pool_uid < 0:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Trader Rewards Pool hotkey{ANSI_RESET} "
+                    f"{trader_pool_hotkey} not registered on netuid {settings.netuid}. "
+                    f"Skipping fixed weight allocation."
+                )
+                trader_pool_uid = None
+            else:
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_GREEN}[{settings.trader_rewards_pool_name}]{ANSI_RESET} "
+                    f"Hotkey: {trader_pool_hotkey}, "
+                    f"UID: {ANSI_BOLD}{trader_pool_uid}{ANSI_RESET}, "
+                    f"Fixed Weight: {ANSI_BOLD}{trader_pool_weight:.6f}{ANSI_RESET} "
+                    f"({trader_pool_weight * 100:.4f}%)"
+                )
+        except Exception as exc:
+            bt.logging.error(
+                f"{ANSI_BOLD}{ANSI_RED}{EMOJI_ERROR} Failed to resolve trader pool UID:{ANSI_RESET} {exc}"
+            )
+            trader_pool_uid = None
+
+    # Normalize with trader pool allocation
+    weights = _normalize(
+        scores,
+        trader_pool_uid=trader_pool_uid,
+        trader_pool_weight=trader_pool_weight if trader_pool_uid is not None else 0.0,
+    )
+    
     uids = list(weights.keys())
     values = list(weights.values())
 
@@ -137,11 +245,22 @@ def publish(
         f"for netuid={ANSI_BOLD}{settings.netuid}{ANSI_RESET} "
         f"{ANSI_DIM}(epoch {epoch_version}){ANSI_RESET}"
     )
+    
     # Log actual normalized weights being published
     for uid, weight_val in zip(uids, values):
         score_val = scores.get(uid, 0.0)
-        bt.logging.debug(f"UID {uid}: score={score_val:.6f} -> normalized_weight={weight_val:.6f}")
-    subtensor = subtensor or bt.subtensor()
+        if uid == trader_pool_uid:
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_MAGENTA}[{settings.trader_rewards_pool_name}]{ANSI_RESET} "
+                f"UID {uid}: "
+                f"score={score_val:.6f} → "
+                f"weight={ANSI_BOLD}{weight_val:.6f}{ANSI_RESET} (FIXED)"
+            )
+        else:
+            bt.logging.debug(
+                f"UID {uid}: score={score_val:.6f} → normalized_weight={weight_val:.6f}"
+            )
+    
     wallet = wallet or bt.wallet()
 
     # Check if enough blocks have passed since last weight update (if metagraph available)

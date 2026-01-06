@@ -14,7 +14,7 @@ module.exports = {
     {
       name: 'cartha-validator-manager',
       script: 'scripts/validator_manager.py',
-      args: '',
+      args: '--hotkey-ss58 5GpfuBR6EU1kRU314qMNfiQKNtf9SQ5wt5CrhebW59ECEes3 --netuid 78',
       cwd: '/Users/tonyle/developer/GTV-Taoshi/cartha-subnet/cartha-validator',
       interpreter: 'python3',
       autorestart: true,
