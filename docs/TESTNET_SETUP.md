@@ -18,7 +18,7 @@ If you don't have `uv` installed, you can install it with:
 **macOS/Linux:**
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/run.sh | sh
 ```
 
 **Windows (PowerShell):**
