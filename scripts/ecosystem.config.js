@@ -3,19 +3,23 @@
  * 
  * This file configures PM2 to manage both the validator manager and validator processes.
  * 
+ * IMPORTANT: This is a template file. Run scripts/run.sh to configure it with your wallet details.
+ * 
  * Usage:
  *   pm2 start ecosystem.config.js
  * 
  * Both processes will run via PM2 and survive SSH disconnect and system restarts.
  */
 
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'cartha-validator-manager',
       script: 'scripts/validator_manager.py',
-      args: '--hotkey-ss58 5GpfuBR6EU1kRU314qMNfiQKNtf9SQ5wt5CrhebW59ECEes3 --netuid 78',
-      cwd: '/Users/tonyle/developer/GTV-Taoshi/cartha-subnet/cartha-validator',
+      args: '--hotkey-ss58 YOUR_HOTKEY_SS58 --netuid 35',
+      cwd: path.resolve(__dirname, '..'),
       interpreter: 'python3',
       autorestart: true,
       watch: false,
@@ -32,12 +36,10 @@ module.exports = {
     {
       name: 'cartha-validator',
       script: 'uv',
-      // NOTE: Update these args with your actual wallet name, hotkey, and netuid
-      // Example: 'run python -m cartha_validator.main --wallet-name cold --wallet-hotkey hot --netuid 35'
-      // You can also set WALLET_NAME, WALLET_HOTKEY, NETUID as environment variables
-      // and use them via process.env.WALLET_NAME in the args string
-            args: 'run python -m cartha_validator.main --wallet-name demo --wallet-hotkey h4 --netuid 78 --use-verified-amounts --subtensor.network test',
-      cwd: '/Users/tonyle/developer/GTV-Taoshi/cartha-subnet/cartha-validator',
+      // NOTE: This is a placeholder. Run scripts/run.sh to configure with your wallet details.
+      // The install script will replace this with your actual wallet-name, wallet-hotkey, and netuid
+      args: 'run python -m cartha_validator.main --wallet-name YOUR_WALLET --wallet-hotkey YOUR_HOTKEY --netuid 35 --use-verified-amounts',
+      cwd: path.resolve(__dirname, '..'),
       interpreter: 'none',
       autorestart: true,
       watch: false,

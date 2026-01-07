@@ -28,7 +28,13 @@ dist/
 .uv/
 .python-version
 
+# Validator
 validator_logs/
 
+# Lock files
 uv.lock
 *.lock
+
+# Backup files
+*.backup
+*.bak
