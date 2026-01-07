@@ -146,8 +146,8 @@ The validator includes an automated update system that:
 ```bash
 # One-time installation
 cd cartha-validator
-chmod +x scripts/install.sh
-./scripts/install.sh
+chmod +x scripts/run.sh
+./scripts/run.sh
 ```
 
 This will:
