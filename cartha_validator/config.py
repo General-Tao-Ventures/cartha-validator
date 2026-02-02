@@ -19,12 +19,13 @@ DEFAULT_VERIFIER_URL = "https://cartha-verifier-826542474079.us-central1.run.app
 # Default leaderboard API URL
 DEFAULT_LEADERBOARD_API_URL = "https://cartha-leaderboard-api-826542474079.us-central1.run.app"
 
-# Default parent vault address (Base Sepolia testnet)
-# In the future, this can be a list of multiple parent vaults
-DEFAULT_PARENT_VAULT_ADDRESS = "0x0dB1218cbCFf1D49181cc810a2b0D54D44652A8d"
+# Default parent vault address (Base Mainnet)
+# Note: The validator now queries all 3 parent vaults automatically (cryptos, currencies, commodities)
+# This address is kept for backward compatibility but is not actively used
+DEFAULT_PARENT_VAULT_ADDRESS = "0x7c5fAc6A0295663686873E418406cf540c45CCF3"  # Cryptos parent vault
 
-# Default public Base Sepolia RPC endpoint
-DEFAULT_BASE_SEPOLIA_RPC_URL = "https://sepolia.base.org"
+# Default public Base Mainnet RPC endpoint
+DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 
 # Trader Rewards Pool Configuration
 TRADER_REWARDS_POOL_HOTKEY = "5EPdZMZyByHbweNBWRFwYqL5czKGbdeVKTpHqVizp4UyUq94"
@@ -60,11 +61,11 @@ class ValidatorSettings(BaseModel):
     pool_weights: Mapping[str, float] = Field(default_factory=dict)
     parent_vault_address: str = Field(
         default=DEFAULT_PARENT_VAULT_ADDRESS,
-        description="Parent vault contract address for querying pool weights",
+        description="Parent vault contract address (legacy, kept for compatibility - validator queries all parent vaults)",
     )
     parent_vault_rpc_url: str = Field(
-        default=DEFAULT_BASE_SEPOLIA_RPC_URL,
-        description="RPC URL for querying parent vault contract",
+        default=DEFAULT_BASE_MAINNET_RPC_URL,
+        description="RPC URL for querying parent vault contracts on Base mainnet",
     )
     max_lock_days: int = 365
     token_decimals: int = 6
@@ -238,8 +239,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--parent-vault-rpc-url",
         type=str,
-        default=os.environ.get("PARENT_VAULT_RPC_URL", DEFAULT_BASE_SEPOLIA_RPC_URL),
-        help=f"RPC URL for querying parent vault contract (default: {DEFAULT_BASE_SEPOLIA_RPC_URL}). Can also be set via PARENT_VAULT_RPC_URL env var.",
+        default=os.environ.get("PARENT_VAULT_RPC_URL", DEFAULT_BASE_MAINNET_RPC_URL),
+        help=f"RPC URL for querying parent vault contracts on Base mainnet (default: {DEFAULT_BASE_MAINNET_RPC_URL}). Can also be set via PARENT_VAULT_RPC_URL env var.",
     )
     parser.add_argument(
         "--leaderboard-api-url",
