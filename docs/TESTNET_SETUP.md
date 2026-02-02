@@ -4,10 +4,17 @@ This guide will help you set up and run a Cartha validator on the public testnet
 
 ## Prerequisites
 
+### Software Requirements
 - Python 3.11
 - [`uv`](https://github.com/astral-sh/uv) package manager (or `pip`)
 - Bittensor wallet with registered validator hotkey
 - Access to the testnet verifier URL
+
+### Minimum Compute Requirements
+- **CPU**: 2 cores
+- **RAM**: 4 GB
+- **Disk**: 20 GB SSD
+- **Network**: Stable internet connection with minimal downtime
 
 **Note**: On testnet, all validators are allowed - no whitelist is required. Whitelist restrictions only apply to mainnet.
 

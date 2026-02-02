@@ -38,3 +38,6 @@ uv.lock
 # Backup files
 *.backup
 *.bak
+
+# PM2 config
+ecosystem.config.js

@@ -32,11 +32,18 @@ uv run python -m cartha_validator.main \
 
 ## Requirements
 
+### Software Requirements
 - Python 3.11
 - [`uv`](https://github.com/astral-sh/uv) for dependency management
 - Bittensor wallet (coldkey and hotkey)
 - Access to Cartha verifier instance
 - **Validator Whitelist**: Your validator hotkey must be whitelisted by the subnet owner
+
+### Minimum Compute Requirements
+- **CPU**: 2 cores
+- **RAM**: 4 GB
+- **Disk**: 20 GB SSD
+- **Network**: Stable internet connection with minimal downtime
 
 ## How It Works
 
