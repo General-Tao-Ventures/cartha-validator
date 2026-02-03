@@ -14,10 +14,10 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from .epoch import epoch_start
 
-DEFAULT_VERIFIER_URL = "https://cartha-verifier-826542474079.us-central1.run.app"
+DEFAULT_VERIFIER_URL = "https://cartha-verifier-193291340038.us-central1.run.app"
 
-# Default leaderboard API URL
-DEFAULT_LEADERBOARD_API_URL = "https://cartha-leaderboard-api-826542474079.us-central1.run.app"
+# Default leaderboard API URL (mainnet)
+DEFAULT_LEADERBOARD_API_URL = "https://cartha-leaderboard-api-193291340038.us-central1.run.app"
 
 # Default parent vault address (Base Mainnet)
 # Note: The validator now queries all 3 parent vaults automatically (cryptos, currencies, commodities)
@@ -172,14 +172,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--wallet-name",
         type=str,
-        required=True,
-        help="Name of the wallet (coldkey) to use for signing weights.",
+        default=None,
+        help="Name of the wallet (coldkey) to use for signing weights. Required unless using --hotkey-ss58 with --dry-run.",
     )
     parser.add_argument(
         "--wallet-hotkey",
         type=str,
-        required=True,
-        help="Name of the hotkey to use for this validator.",
+        default=None,
+        help="Name of the hotkey to use for this validator. Required unless using --hotkey-ss58 with --dry-run.",
+    )
+    parser.add_argument(
+        "--hotkey-ss58",
+        type=str,
+        default=None,
+        help="Hotkey SS58 address to use directly (e.g., for subnet owners). "
+             "In dry-run mode, this can be used without --wallet-name/--wallet-hotkey. "
+             "In production mode, must match the wallet's hotkey address.",
     )
     parser.add_argument(
         "--epoch",
@@ -275,8 +283,11 @@ def parse_args() -> argparse.Namespace:
         config.logging.debug = True
 
     # Override wallet name/hotkey from our custom args (--wallet-name/--wallet-hotkey)
-    config.wallet.name = parsed_args.wallet_name
-    config.wallet.hotkey = parsed_args.wallet_hotkey
+    # Only set if provided (allows --hotkey-ss58 mode without wallet)
+    if parsed_args.wallet_name:
+        config.wallet.name = parsed_args.wallet_name
+    if parsed_args.wallet_hotkey:
+        config.wallet.hotkey = parsed_args.wallet_hotkey
 
     # Override netuid from our args
     config.netuid = parsed_args.netuid
