@@ -143,50 +143,32 @@ if netuid == "78":
 
 # Join all args
 new_args_str = " ".join(args_parts)
+new_args_line = f"      args: '{new_args_str}',"
 
-# Replace the args line - match the entire line including the JavaScript concatenation
-# Try multiple patterns to catch different formats (with or without --use-verified-amounts)
-old_patterns = [
-    # Pattern 1: Original template format with process.env fallbacks
-    r"      args: 'run python -m cartha_validator\.main ' \+ \(process\.env\.WALLET_NAME \|\| '[^']+'\) \+ ' --wallet-hotkey ' \+ \(process\.env\.WALLET_HOTKEY \|\| '[^']+'\) \+ ' --netuid ' \+ \(process\.env\.NETUID \|\| '\d+'\)[^']*',",
-    # Pattern 2: Already has --use-verified-amounts
-    r"      args: 'run python -m cartha_validator\.main ' \+ \(process\.env\.WALLET_NAME \|\| '[^']+'\) \+ ' --wallet-hotkey ' \+ \(process\.env\.WALLET_HOTKEY \|\| '[^']+'\) \+ ' --netuid ' \+ \(process\.env\.NETUID \|\| '\d+'\) \+ ' --use-verified-amounts',",
-    # Pattern 3: Any args line with cartha_validator.main
-    r"      args: '[^']*cartha_validator\.main[^']*',",
-]
-
-new_args = f"      args: '{new_args_str}',"
-
-# Try each pattern until one matches
+# Simple line-by-line replacement - most reliable approach
+# Find the line containing both 'args:' and 'cartha_validator.main'
+lines = content.split('\n')
 replaced = False
-for old_pattern in old_patterns:
-    if re.search(old_pattern, content):
-        content = re.sub(old_pattern, new_args, content)
+
+for i, line in enumerate(lines):
+    if 'args:' in line and 'cartha_validator.main' in line:
+        lines[i] = new_args_line
         replaced = True
+        print(f"✓ Updated cartha-validator args in ecosystem.config.js")
         break
 
 if not replaced:
-    # If no pattern matched, try to find the args line and replace it manually
-    lines = content.split('\n')
-    for i, line in enumerate(lines):
-        if 'args:' in line and 'cartha_validator.main' in line:
-            lines[i] = f"      {new_args}"
-            content = '\n'.join(lines)
-            replaced = True
-            break
+    print("Warning: Could not find cartha-validator args line to replace.")
+    print("Please update ecosystem.config.js manually with:")
+    print(f"  {new_args_line}")
 
-if not replaced:
-    print("Warning: Could not find args line to replace. Please update ecosystem.config.js manually.")
-    print(f"Expected pattern: args: 'run python -m cartha_validator.main ...'")
-
-# Write back
-with open(ecosystem_file, 'w') as f:
-    f.write(content)
-
-print("✓ Updated ecosystem.config.js with your wallet configuration")
-print("  Added --use-verified-amounts flag (hardcoded)")
 if netuid == "78":
     print("  Added --subtensor.network test for testnet")
+
+# Write back
+content = '\n'.join(lines)
+with open(ecosystem_file, 'w') as f:
+    f.write(content)
 EOF
 
 echo ""
