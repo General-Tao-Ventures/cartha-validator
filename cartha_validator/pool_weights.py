@@ -45,6 +45,20 @@ CACHE_DIR = Path.home() / ".cartha_validator"
 CACHE_FILE = CACHE_DIR / "pool_weights_cache.json"
 CACHE_TTL_HOURS = 24  # Cache validity: 24 hours
 
+# =============================================================================
+# PRE-DEX EQUAL WEIGHTS MODE
+# =============================================================================
+# When True, all pools are weighted equally (1.0 each, normalized to ~16.67% per pool).
+# This is the pre-DEX behavior where we don't have performance/volume data yet.
+# 
+# When the DEX goes live and we have volume/performance data, set this to False
+# to enable dynamic weight calculation based on on-chain data or performance metrics.
+# =============================================================================
+PRE_DEX_EQUAL_WEIGHTS = True
+
+# All known pool IDs for equal weight distribution
+ALL_KNOWN_POOLS = list(POOL_ID_TO_VAULT.keys())
+
 
 def _load_cache() -> dict[str, Any] | None:
     """Load cached pool weights from disk.
@@ -340,101 +354,138 @@ def get_pool_weights_for_scoring(
         Weights are normalized to sum to 1.0 across all pools.
         
     Note:
+        - PRE-DEX MODE: When PRE_DEX_EQUAL_WEIGHTS=True, all pools get equal weight (1.0)
+        - POST-DEX MODE: When PRE_DEX_EQUAL_WEIGHTS=False, weights come from on-chain data
         - Weights are cached for 24 hours to avoid rate limiting
         - Cache is checked first, only queries chain if cache is stale or missing
         - Each parent vault has 10,000 basis points (100%) distributed among its child vaults
         - With 3 parent vaults, total = 30,000 basis points
         - Weights are normalized by dividing by the total sum (e.g., 6000/30000 = 0.2 = 20%)
     """
-    # Try to load from cache first (unless force refresh)
-    if not force_refresh:
-        cache_data = _load_cache()
-        if _is_cache_valid(cache_data):
-            # Use cached weights
-            weights = cache_data["weights"]
-            bt.logging.info(
-                f"[POOL WEIGHTS] Using cached weights ({len(weights)} pools)"
-            )
-            
-            # Normalize cached weights
-            total_weight = sum(weights.values())
-            if total_weight > 0:
-                normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
-                
-                bt.logging.debug(
-                    f"[POOL WEIGHTS] Cached weights normalized: "
-                    f"Total raw: {total_weight:.0f} bps, "
-                    f"Normalized sum: {sum(normalized_weights.values()):.4f}"
-                )
-                
-                return normalized_weights
-            else:
-                bt.logging.warning("[POOL WEIGHTS] Cached weights have zero total, refreshing...")
-    
-    # Cache is stale, missing, or force refresh - query from chain
-    try:
-        bt.logging.info("[POOL WEIGHTS] Querying fresh weights from chain...")
-        
-        # Query all parent vaults with rate limiting protection
-        weights = query_all_parent_vaults(
-            rpc_url,
-            timeout=timeout,
-            retry_attempts=3,
-            delay_between_vaults=2.0,  # 2 second delay to avoid rate limiting
-        )
-        
-        if not weights:
-            raise ValueError("No weights retrieved from any parent vault")
-        
-        # Save to cache for future use
-        _save_cache(weights)
-        
-        # Calculate total weight across all parent vaults
-        # Each parent vault has 10,000 bps (100%), so with 3 parents total should be ~30,000
-        total_weight = sum(weights.values())
-        
-        if total_weight == 0:
-            raise ValueError("Total weight is zero - cannot normalize")
-        
-        # Normalize weights to sum to 1.0 across all pools
-        # Example: 6000 bps / 30000 total = 0.2 (20% of all pools)
-        normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
+    # ==========================================================================
+    # PRE-DEX MODE: Return equal weights for all pools
+    # ==========================================================================
+    # In pre-DEX phase, we don't have volume/performance data yet.
+    # All pools are weighted equally so miners aren't incentivized to pick
+    # specific pools over others. Reward is purely based on amount + lock duration.
+    # 
+    # When DEX goes live, set PRE_DEX_EQUAL_WEIGHTS=False to enable dynamic weights.
+    # ==========================================================================
+    if PRE_DEX_EQUAL_WEIGHTS:
+        # Return 1.0 for each known pool (equal weight)
+        # The scoring formula multiplies by this weight, so equal weights = equal treatment
+        equal_weights = {pool_id: 1.0 for pool_id in ALL_KNOWN_POOLS}
         
         bt.logging.info(
-            f"[POOL WEIGHTS] Total pools weighted: {len(normalized_weights)}, "
-            f"Total raw weight: {total_weight:.0f} bps, "
-            f"Normalized weight sum: {sum(normalized_weights.values()):.4f}"
+            f"[POOL WEIGHTS] PRE-DEX MODE: Using equal weights for all {len(equal_weights)} pools "
+            f"(each pool weight = 1.0)"
         )
         
-        return normalized_weights
-        
-    except Exception as exc:
-        bt.logging.error(
-            f"[POOL WEIGHTS] Failed to query weights from chain: {exc}."
-        )
-        
-        # Try to use cached weights even if expired, as a last resort
-        cache_data = _load_cache()
-        if cache_data and "weights" in cache_data:
-            bt.logging.warning(
-                "[POOL WEIGHTS] Using expired cache as fallback due to query failure"
-            )
-            weights = cache_data["weights"]
-            total_weight = sum(weights.values())
-            if total_weight > 0:
-                normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
-                return normalized_weights
-        
-        # Last resort: use fallback weights
-        if fallback_weights:
-            bt.logging.warning("[POOL WEIGHTS] Using fallback weights")
-            return {
-                pid: w / 100.0 if w > 1.0 else w
-                for pid, w in fallback_weights.items()
-            }
-        
-        # If no fallback and query failed, raise error
-        raise RuntimeError(
-            f"Failed to query pool weights from chain and no fallback weights provided: {exc}"
-        ) from exc
+        return equal_weights
+    
+    # ==========================================================================
+    # POST-DEX MODE: Query weights from on-chain (commented out for now)
+    # ==========================================================================
+    # TODO: When DEX goes live, uncomment the code below and set PRE_DEX_EQUAL_WEIGHTS=False
+    # The on-chain weights should be updated based on volume/performance data.
+    # ==========================================================================
+    
+    # --- BEGIN COMMENTED OUT ON-CHAIN WEIGHT QUERY (for future use) ---
+    # # Try to load from cache first (unless force refresh)
+    # if not force_refresh:
+    #     cache_data = _load_cache()
+    #     if _is_cache_valid(cache_data):
+    #         # Use cached weights
+    #         weights = cache_data["weights"]
+    #         bt.logging.info(
+    #             f"[POOL WEIGHTS] Using cached weights ({len(weights)} pools)"
+    #         )
+    #         
+    #         # Normalize cached weights
+    #         total_weight = sum(weights.values())
+    #         if total_weight > 0:
+    #             normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
+    #             
+    #             bt.logging.debug(
+    #                 f"[POOL WEIGHTS] Cached weights normalized: "
+    #                 f"Total raw: {total_weight:.0f} bps, "
+    #                 f"Normalized sum: {sum(normalized_weights.values()):.4f}"
+    #             )
+    #             
+    #             return normalized_weights
+    #         else:
+    #             bt.logging.warning("[POOL WEIGHTS] Cached weights have zero total, refreshing...")
+    # 
+    # # Cache is stale, missing, or force refresh - query from chain
+    # try:
+    #     bt.logging.info("[POOL WEIGHTS] Querying fresh weights from chain...")
+    #     
+    #     # Query all parent vaults with rate limiting protection
+    #     weights = query_all_parent_vaults(
+    #         rpc_url,
+    #         timeout=timeout,
+    #         retry_attempts=3,
+    #         delay_between_vaults=2.0,  # 2 second delay to avoid rate limiting
+    #     )
+    #     
+    #     if not weights:
+    #         raise ValueError("No weights retrieved from any parent vault")
+    #     
+    #     # Save to cache for future use
+    #     _save_cache(weights)
+    #     
+    #     # Calculate total weight across all parent vaults
+    #     # Each parent vault has 10,000 bps (100%), so with 3 parents total should be ~30,000
+    #     total_weight = sum(weights.values())
+    #     
+    #     if total_weight == 0:
+    #         raise ValueError("Total weight is zero - cannot normalize")
+    #     
+    #     # Normalize weights to sum to 1.0 across all pools
+    #     # Example: 6000 bps / 30000 total = 0.2 (20% of all pools)
+    #     normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
+    #     
+    #     bt.logging.info(
+    #         f"[POOL WEIGHTS] Total pools weighted: {len(normalized_weights)}, "
+    #         f"Total raw weight: {total_weight:.0f} bps, "
+    #         f"Normalized weight sum: {sum(normalized_weights.values()):.4f}"
+    #     )
+    #     
+    #     return normalized_weights
+    #     
+    # except Exception as exc:
+    #     bt.logging.error(
+    #         f"[POOL WEIGHTS] Failed to query weights from chain: {exc}."
+    #     )
+    #     
+    #     # Try to use cached weights even if expired, as a last resort
+    #     cache_data = _load_cache()
+    #     if cache_data and "weights" in cache_data:
+    #         bt.logging.warning(
+    #             "[POOL WEIGHTS] Using expired cache as fallback due to query failure"
+    #         )
+    #         weights = cache_data["weights"]
+    #         total_weight = sum(weights.values())
+    #         if total_weight > 0:
+    #             normalized_weights = {pid: w / total_weight for pid, w in weights.items()}
+    #             return normalized_weights
+    #     
+    #     # Last resort: use fallback weights
+    #     if fallback_weights:
+    #         bt.logging.warning("[POOL WEIGHTS] Using fallback weights")
+    #         return {
+    #             pid: w / 100.0 if w > 1.0 else w
+    #             for pid, w in fallback_weights.items()
+    #         }
+    #     
+    #     # If no fallback and query failed, raise error
+    #     raise RuntimeError(
+    #         f"Failed to query pool weights from chain and no fallback weights provided: {exc}"
+    #     ) from exc
+    # --- END COMMENTED OUT ON-CHAIN WEIGHT QUERY ---
+    
+    # Fallback for POST-DEX mode if the above code is uncommented but fails
+    # This should not be reached in PRE-DEX mode
+    bt.logging.warning("[POOL WEIGHTS] POST-DEX mode but on-chain query code is commented out, using equal weights")
+    return {pool_id: 1.0 for pool_id in ALL_KNOWN_POOLS}
 
