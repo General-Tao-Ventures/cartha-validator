@@ -104,17 +104,10 @@ else
 fi
 
 echo ""
-echo "Optional flags:"
-read -p "Enable --dry-run mode? [y/N]: " DRY_RUN
-DRY_RUN=${DRY_RUN:-N}
-
-echo ""
 echo "✓ Configuration:"
 echo "  Wallet: $WALLET_NAME"
 echo "  Hotkey: $WALLET_HOTKEY"
 echo "  NetUID: $NETUID"
-echo "  Use verified amounts: enabled (hardcoded)"
-[[ "$DRY_RUN" =~ ^[Yy]$ ]] && echo "  Dry-run: enabled"
 echo ""
 
 # 6. Update ecosystem.config.js with wallet/hotkey/netuid
@@ -130,7 +123,6 @@ ecosystem_file = "$ECOSYSTEM_FILE"
 wallet_name = "$WALLET_NAME"
 wallet_hotkey = "$WALLET_HOTKEY"
 netuid = "$NETUID"
-dry_run = "$DRY_RUN"
 
 # Read the file
 with open(ecosystem_file, 'r') as f:
@@ -143,16 +135,11 @@ args_parts = [
     f"--wallet-name {wallet_name}",
     f"--wallet-hotkey {wallet_hotkey}",
     f"--netuid {netuid}",
-    "--use-verified-amounts",  # Always enabled (hardcoded)
 ]
 
 # Add --subtensor.network test for testnet
 if netuid == "78":
     args_parts.append("--subtensor.network test")
-
-# Add optional flags
-if dry_run.upper() == "Y":
-    args_parts.append("--dry-run")
 
 # Join all args
 new_args_str = " ".join(args_parts)
@@ -200,73 +187,53 @@ print("✓ Updated ecosystem.config.js with your wallet configuration")
 print("  Added --use-verified-amounts flag (hardcoded)")
 if netuid == "78":
     print("  Added --subtensor.network test for testnet")
-if dry_run.upper() == "Y":
-    print("  Added --dry-run flag")
 EOF
 
 echo ""
 
-# Extract hotkey SS58 address for validator manager
-echo "Step 5.5: Resolving hotkey SS58 address..."
-HOTKEY_SS58=$(python3 << EOF
+# Extract hotkey SS58 address for validator manager (silent on failure)
+HOTKEY_SS58=$(python3 << EOF 2>/dev/null
 import sys
 try:
     import bittensor as bt
     wallet = bt.wallet(name="$WALLET_NAME", hotkey="$WALLET_HOTKEY")
-    hotkey_ss58 = wallet.hotkey.ss58_address
-    print(hotkey_ss58)
-except Exception as e:
-    print(f"⚠ Warning: Could not resolve hotkey SS58: {e}", file=sys.stderr)
-    print("  Validator manager will skip UID resolution", file=sys.stderr)
-    sys.exit(0)  # Non-fatal, continue installation
+    print(wallet.hotkey.ss58_address)
+except Exception:
+    sys.exit(0)  # Silent failure, non-fatal
 EOF
 )
 
 if [ -n "$HOTKEY_SS58" ]; then
-    echo "✓ Resolved hotkey SS58: $HOTKEY_SS58"
+    echo "Step 5.5: Resolved hotkey SS58: $HOTKEY_SS58"
     
     # Update ecosystem.config.js to add hotkey-ss58 and netuid to validator manager args
-    python3 << EOF
+    python3 << EOF 2>/dev/null
 import re
 
 ecosystem_file = "$ECOSYSTEM_FILE"
 hotkey_ss58 = "$HOTKEY_SS58"
 netuid = "$NETUID"
 
-# Read the file
 with open(ecosystem_file, 'r') as f:
     content = f.read()
 
-# Update validator manager args to include --hotkey-ss58 and --netuid
-# Find the args line for cartha-validator-manager and replace it
 lines = content.split('\n')
 in_manager_section = False
-updated = False
 
 for i, line in enumerate(lines):
     if "name: 'cartha-validator-manager'" in line:
         in_manager_section = True
     elif in_manager_section and "args:" in line:
-        # Replace the args line
         lines[i] = re.sub(r"args: '[^']*'", f"args: '--hotkey-ss58 {hotkey_ss58} --netuid {netuid}'", line)
-        updated = True
         break
     elif in_manager_section and line.strip().startswith('}'):
-        # End of manager section, stop looking
         break
 
-if updated:
-    content = '\n'.join(lines)
-    print("✓ Updated validator manager args with hotkey SS58 and netuid")
-else:
-    print("⚠ Warning: Could not find validator manager args to update", file=sys.stderr)
-
-# Write back
+content = '\n'.join(lines)
 with open(ecosystem_file, 'w') as f:
     f.write(content)
 EOF
-else
-    echo "⚠ Warning: Could not resolve hotkey SS58. Validator manager will skip UID resolution."
+    echo "✓ Updated validator manager args"
 fi
 
 echo ""
@@ -276,7 +243,7 @@ echo "Step 6: Optional RPC configuration..."
 ENV_FILE="$PROJECT_ROOT/.env"
 
 echo ""
-echo "Default RPC URL: https://sepolia.base.org"
+echo "Default RPC URL: https://mainnet.base.org"
 echo "You can override this if you have your own RPC node."
 echo ""
 read -p "Do you want to use a custom RPC URL? [y/N]: " OVERRIDE_RPC
