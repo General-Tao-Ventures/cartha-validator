@@ -39,5 +39,5 @@ uv.lock
 *.backup
 *.bak
 
-# PM2 config
-ecosystem.config.js
+# PM2 ecosystem config backup (created by run.sh)
+scripts/ecosystem.config.js.backup
