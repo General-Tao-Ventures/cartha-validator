@@ -10,25 +10,26 @@ uv run python -m cartha_validator.main [OPTIONS]
 
 ## Command-Line Arguments
 
-### Required Arguments
+### Wallet Configuration
 
-| Argument | Type | Description |
-| --- | --- | --- |
-| `--wallet-name` | string | Name of the wallet (coldkey) to use for signing weights |
-| `--wallet-hotkey` | string | Name of the hotkey to use for this validator |
+| Argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--wallet-name` | string | - | Name of the wallet (coldkey) to use for signing weights. Required unless using `--hotkey-ss58` with `--dry-run`. |
+| `--wallet-hotkey` | string | `default` | Name of the hotkey to use for this validator. Defaults to "default" if not specified. |
+| `--hotkey-ss58` | string | - | Hotkey SS58 address to use directly (e.g., for subnet owners). In dry-run mode, can be used without wallet credentials. In production mode, must match the wallet's hotkey address. |
 
 ### Verifier Configuration
 
 | Argument | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--verifier-url` | string | `https://cartha-verifier-826542474079.us-central1.run.app` | Base URL for the Cartha verifier |
+| `--verifier-url` | string | `https://cartha-verifier-193291340038.us-central1.run.app` | Base URL for the Cartha verifier |
 | `--timeout` | float | `15.0` | HTTP timeout (seconds) for verifier calls |
 
 ### Leaderboard Configuration
 
 | Argument | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--leaderboard-api-url` | string | `https://cartha-leaderboard-api-826542474079.us-central1.run.app` | Leaderboard API URL for submitting rankings. Use empty string (`""`) to disable. |
+| `--leaderboard-api-url` | string | `https://cartha-leaderboard-api-193291340038.us-central1.run.app` | Leaderboard API URL for submitting rankings. Use empty string (`""`) to disable. |
 
 ### Network Configuration
 
@@ -118,6 +119,27 @@ uv run python -m cartha_validator.main \
 
 **⚠️ Warning:** `--use-verified-amounts` is **FORBIDDEN on mainnet** (netuid 35, network "finney"). The validator will refuse to run with this flag on mainnet to enforce on-chain validation.
 
+### Using Direct Hotkey SS58 Address
+
+For subnet owners or users who want to specify their hotkey by SS58 address instead of wallet file:
+
+```bash
+# Dry-run with SS58 address only (no wallet required)
+uv run python -m cartha_validator.main \
+  --hotkey-ss58 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty \
+  --netuid 35 \
+  --dry-run
+
+# Production with SS58 + wallet (validates they match)
+uv run python -m cartha_validator.main \
+  --wallet-name cold \
+  --wallet-hotkey hot \
+  --hotkey-ss58 5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty \
+  --netuid 35
+```
+
+**Note:** In production mode, the `--hotkey-ss58` address must match the wallet's hotkey address. This is useful for validation and for subnet owners who want to explicitly specify their hotkey.
+
 ### Custom Verifier URL
 
 ```bash
@@ -177,8 +199,8 @@ The validator uses `cartha_validator/config.py` for default settings. You can ov
 
 ```python
 netuid: 35
-verifier_url: "https://cartha-verifier-826542474079.us-central1.run.app"
-leaderboard_api_url: "https://cartha-leaderboard-api-826542474079.us-central1.run.app"
+verifier_url: "https://cartha-verifier-193291340038.us-central1.run.app"
+leaderboard_api_url: "https://cartha-leaderboard-api-193291340038.us-central1.run.app"
 max_lock_days: 365
 token_decimals: 6
 epoch_weekday: 4  # Friday
@@ -191,8 +213,8 @@ You can set these environment variables to configure the validator:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://cartha-verifier-826542474079.us-central1.run.app` |
-| `LEADERBOARD_API_URL` | Leaderboard API endpoint URL | `https://cartha-leaderboard-api-826542474079.us-central1.run.app` |
+| `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://cartha-verifier-193291340038.us-central1.run.app` |
+| `LEADERBOARD_API_URL` | Leaderboard API endpoint URL | `https://cartha-leaderboard-api-193291340038.us-central1.run.app` |
 | `CARTHA_NETUID` | Subnet netuid | `35` |
 
 ## Common Workflows
@@ -259,7 +281,7 @@ After=network.target
 Type=simple
 User=validator
 WorkingDirectory=/path/to/cartha-validator
-Environment="CARTHA_VERIFIER_URL=https://cartha-verifier-826542474079.us-central1.run.app"
+Environment="CARTHA_VERIFIER_URL=https://cartha-verifier-193291340038.us-central1.run.app"
 ExecStart=/path/to/venv/bin/python -m cartha_validator.main \
   --wallet-name cold \
   --wallet-hotkey hot \

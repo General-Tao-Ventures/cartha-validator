@@ -67,11 +67,7 @@ def main() -> None:
 
     bt.logging.info("Setting up bittensor objects.")
 
-    # Initialize wallet using config (ensures proper Bittensor integration)
-    wallet = bt.wallet(config=config)
-    bt.logging.info(f"Wallet: {wallet}")
-
-    # Initialize subtensor using config
+    # Initialize subtensor FIRST - needed for subnet owner verification
     subtensor = bt.subtensor(config=config)
     bt.logging.info(f"Subtensor: {subtensor}")
 
@@ -82,21 +78,167 @@ def main() -> None:
     # Sync metagraph initially to get latest state
     metagraph.sync(subtensor=subtensor)
 
-    # Check if validator is registered
-    hotkey_ss58 = wallet.hotkey.ss58_address
-    is_registered = subtensor.is_hotkey_registered_on_subnet(
-        hotkey_ss58=hotkey_ss58,
-        netuid=args.netuid,
-    )
+    # Determine hotkey SS58 address and wallet setup
+    hotkey_ss58 = getattr(args, "hotkey_ss58", None)
+    wallet = None
+    is_subnet_owner = False
+    
+    if hotkey_ss58:
+        # Using direct SS58 address - verify via metagraph
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}Using direct hotkey SS58:{ANSI_RESET} {hotkey_ss58}"
+        )
+        
+        # Check if hotkey is registered on subnet
+        is_registered = subtensor.is_hotkey_registered_on_subnet(
+            hotkey_ss58=hotkey_ss58,
+            netuid=args.netuid,
+        )
+        
+        if not is_registered:
+            bt.logging.error(
+                f"Hotkey {hotkey_ss58} is not registered on netuid {args.netuid}. "
+                "Please register the hotkey before running the validator."
+            )
+            raise RuntimeError(
+                f"Validator not registered: hotkey {hotkey_ss58} not found on netuid {args.netuid}"
+            )
+        
+        # Get the UID for this hotkey from metagraph
+        validator_uid = metagraph.hotkeys.index(hotkey_ss58)
+        
+        # Check if this hotkey is the subnet owner's hotkey
+        # metagraph.owner_hotkey contains the subnet owner's hotkey SS58 address
+        try:
+            subnet_owner_hotkey = metagraph.owner_hotkey
+            bt.logging.info(
+                f"{ANSI_DIM}Subnet owner hotkey: {subnet_owner_hotkey}{ANSI_RESET}"
+            )
+            
+            # Check if the provided hotkey matches the subnet owner's hotkey
+            if hotkey_ss58 == subnet_owner_hotkey:
+                is_subnet_owner = True
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_GREEN}✓ SUBNET OWNER VERIFIED{ANSI_RESET}\n"
+                    f"  Hotkey {hotkey_ss58} is the subnet owner hotkey.\n"
+                    f"  Running validator with full permissions."
+                )
+        except Exception as e:
+            bt.logging.warning(
+                f"{ANSI_YELLOW}Could not verify subnet owner: {e}{ANSI_RESET}"
+            )
+        
+        # If subnet owner is verified, try to find wallet for weight publishing
+        if is_subnet_owner and args.wallet_name:
+            # Not subnet owner but wallet provided - try to find matching hotkey
+            from pathlib import Path
+            
+            wallet_path = Path(config.wallet.path).expanduser() / config.wallet.name / "hotkeys"
+            
+            if args.wallet_hotkey:
+                # Hotkey name explicitly provided - load it directly
+                wallet = bt.wallet(config=config)
+                wallet_hotkey_ss58 = wallet.hotkey.ss58_address
+                
+                if wallet_hotkey_ss58 != hotkey_ss58:
+                    bt.logging.error(
+                        f"Hotkey SS58 mismatch!\n"
+                        f"  --hotkey-ss58: {hotkey_ss58}\n"
+                        f"  Wallet hotkey ({config.wallet.hotkey}): {wallet_hotkey_ss58}"
+                    )
+                    raise RuntimeError(
+                        f"Hotkey SS58 mismatch: --hotkey-ss58 ({hotkey_ss58}) != wallet ({wallet_hotkey_ss58})"
+                    )
+                bt.logging.info(f"Wallet: {wallet}")
+            elif wallet_path.exists():
+                # Scan wallet hotkeys to find matching SS58
+                bt.logging.info(
+                    f"{ANSI_DIM}Scanning wallet hotkeys to find matching SS58...{ANSI_RESET}"
+                )
+                found_hotkey_name = None
+                
+                for hotkey_file in wallet_path.iterdir():
+                    if hotkey_file.is_file():
+                        try:
+                            # Try to load this hotkey and check its SS58
+                            test_wallet = bt.wallet(
+                                name=config.wallet.name,
+                                hotkey=hotkey_file.name,
+                                path=str(config.wallet.path),
+                            )
+                            if test_wallet.hotkey.ss58_address == hotkey_ss58:
+                                found_hotkey_name = hotkey_file.name
+                                wallet = test_wallet
+                                break
+                        except Exception:
+                            # Skip invalid hotkey files
+                            continue
+                
+                if found_hotkey_name:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_GREEN}Found matching hotkey:{ANSI_RESET} '{found_hotkey_name}' "
+                        f"in wallet '{config.wallet.name}'"
+                    )
+                else:
+                    # Hotkey not found locally - allow observation mode
+                    bt.logging.warning(
+                        f"{ANSI_BOLD}{ANSI_YELLOW}⚠ No local hotkey matching SS58 {hotkey_ss58}{ANSI_RESET}\n"
+                        f"  Wallet path: {wallet_path}\n"
+                        f"  Available hotkeys: {[f.name for f in wallet_path.iterdir() if f.is_file()]}\n"
+                        f"  {ANSI_BOLD}Running in OBSERVATION MODE{ANSI_RESET} - weights will NOT be published."
+                    )
+                    if not args.dry_run:
+                        args.dry_run = True
+                    wallet = None
+            else:
+                bt.logging.warning(
+                    f"{ANSI_BOLD}{ANSI_YELLOW}⚠ Wallet hotkeys directory not found:{ANSI_RESET} {wallet_path}\n"
+                    f"  {ANSI_BOLD}Running in OBSERVATION MODE{ANSI_RESET} - weights will NOT be published."
+                )
+                if not args.dry_run:
+                    args.dry_run = True
+                wallet = None
+        else:
+            # SS58 only mode without wallet and not subnet owner
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}⚠ Running with SS58 address only (no wallet){ANSI_RESET}\n"
+                f"  {ANSI_BOLD}OBSERVATION MODE{ANSI_RESET} - weights will NOT be published."
+            )
+            if not args.dry_run:
+                args.dry_run = True
+            wallet = None
+    else:
+        # Traditional wallet-based approach - need at least wallet-name
+        if not args.wallet_name:
+            bt.logging.error(
+                f"{ANSI_BOLD}{ANSI_RED}Missing required arguments.{ANSI_RESET}\n"
+                f"  Provide either:\n"
+                f"    1. --wallet-name (for production), or\n"
+                f"    2. --hotkey-ss58 (for subnet owner or observation mode)"
+            )
+            raise RuntimeError(
+                "Must provide --wallet-name or --hotkey-ss58"
+            )
+        
+        wallet = bt.wallet(config=config)
+        hotkey_ss58 = wallet.hotkey.ss58_address
+        bt.logging.info(f"Wallet: {wallet}")
 
-    if not is_registered:
-        bt.logging.error(
-            f"Wallet: {wallet} is not registered on netuid {args.netuid}. "
-            "Please register the hotkey before running the validator."
+    # Check if validator is registered (for non-SS58 path, already checked above for SS58 path)
+    if not getattr(args, "hotkey_ss58", None):
+        is_registered = subtensor.is_hotkey_registered_on_subnet(
+            hotkey_ss58=hotkey_ss58,
+            netuid=args.netuid,
         )
-        raise RuntimeError(
-            f"Validator not registered: hotkey {hotkey_ss58} not found on netuid {args.netuid}"
-        )
+        
+        if not is_registered:
+            bt.logging.error(
+                f"Hotkey {hotkey_ss58} is not registered on netuid {args.netuid}. "
+                "Please register the hotkey before running the validator."
+            )
+            raise RuntimeError(
+                f"Validator not registered: hotkey {hotkey_ss58} not found on netuid {args.netuid}"
+            )
 
     validator_uid = metagraph.hotkeys.index(hotkey_ss58)
 
@@ -178,6 +320,7 @@ def main() -> None:
             validator_uid=validator_uid,
             args=args,
             force=True,  # Always force weights in single-run mode
+            hotkey_ss58=hotkey_ss58,
         )
     else:
         # Continuous daemon mode
@@ -301,6 +444,7 @@ def main() -> None:
                         validator_uid=validator_uid,
                         args=args,
                         force=is_startup,  # Force on startup
+                        hotkey_ss58=hotkey_ss58,
                     )
 
                     # Cache the weights and scores for this weekly epoch
@@ -379,6 +523,7 @@ def main() -> None:
                                     validator_uid=validator_uid,
                                     args=args,
                                     force=True,  # Force refresh to get latest state
+                                    hotkey_ss58=hotkey_ss58,
                                 )
                                 
                                 # Update cached weights and scores with latest state

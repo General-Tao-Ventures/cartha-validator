@@ -31,6 +31,7 @@ def _normalize(
     scores: Mapping[int, float],
     trader_pool_uid: int | None = None,
     trader_pool_weight: float = 0.0,
+    owner_hotkey_uid: int | None = None,
 ) -> dict[int, float]:
     """Normalize scores into weights that sum to 1, with optional fixed trader pool allocation.
     
@@ -38,6 +39,7 @@ def _normalize(
         scores: Mapping of UID to score
         trader_pool_uid: Optional UID of trader rewards pool (receives fixed weight)
         trader_pool_weight: Fixed weight for trader pool (e.g., 0.243902 for 24.3902%)
+        owner_hotkey_uid: Optional UID of subnet owner hotkey (receives remaining weight when no miners)
     
     Returns:
         Normalized weights dict
@@ -56,9 +58,9 @@ def _normalize(
     # Calculate remaining weight for miners (after trader pool allocation)
     remaining_weight = 1.0 - trader_pool_weight
     
-    # If trader pool is in the scores, we'll override its weight
-    # Otherwise, we'll add it separately
-    miner_scores = {uid: score for uid, score in positive.items() if uid != trader_pool_uid}
+    # Exclude trader pool and owner hotkey from miner scores
+    excluded_uids = {trader_pool_uid, owner_hotkey_uid} - {None}
+    miner_scores = {uid: score for uid, score in positive.items() if uid not in excluded_uids}
     
     # Normalize miner scores to fill remaining weight
     miner_total = sum(miner_scores.values())
@@ -66,15 +68,33 @@ def _normalize(
     weights: dict[int, float] = {}
     
     if miner_total <= 0:
-        bt.logging.warning(
-            f"{ANSI_BOLD}{ANSI_YELLOW}Total miner score non-positive; "
-            f"distributing remaining weight equally.{ANSI_RESET}"
-        )
-        # If no valid miner scores, distribute remaining weight equally
+        # No valid miner scores
         if miner_scores:
+            # Miners exist but all have 0 score - distribute remaining weight equally
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}Total miner score non-positive; "
+                f"distributing remaining weight equally among {len(miner_scores)} miners.{ANSI_RESET}"
+            )
             equal_weight = remaining_weight / len(miner_scores)
             weights = {uid: equal_weight for uid in miner_scores}
+        elif owner_hotkey_uid is not None:
+            # No miners at all - allocate remaining weight to owner hotkey for burning
+            # IMPORTANT: This is for EMISSION BURNING, not rewards. The owner hotkey burns
+            # emissions to reduce inflation when no miners are active yet.
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_MAGENTA}🔥 [EMISSION BURN]{ANSI_RESET} "
+                f"No verified miners yet - allocating {ANSI_BOLD}{remaining_weight:.6f}{ANSI_RESET} "
+                f"({remaining_weight * 100:.4f}%) to subnet owner hotkey (UID {owner_hotkey_uid}) "
+                f"for {ANSI_BOLD}BURNING EMISSIONS{ANSI_RESET}. "
+                f"This weight goes to the owner hotkey which burns TAO, NOT for personal rewards."
+            )
+            weights[owner_hotkey_uid] = remaining_weight
         else:
+            # No miners and no owner hotkey configured
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}No miner scores and no owner hotkey configured; "
+                f"remaining weight {remaining_weight:.6f} will not be allocated.{ANSI_RESET}"
+            )
             weights = {}
     else:
         # Normalize miners to fill remaining weight (e.g., 75.6098% when trader pool takes 24.3902%)
@@ -187,13 +207,6 @@ def publish(
         validator_uid: Validator UID
         force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
     """
-    if not scores:
-        bt.logging.warning(
-            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No scores to publish;{ANSI_RESET} "
-            f"skipping set_weights."
-        )
-        return {}
-
     # Initialize subtensor early to resolve trader pool UID
     subtensor = subtensor or bt.subtensor()
     
@@ -229,11 +242,60 @@ def publish(
             )
             trader_pool_uid = None
 
-    # Normalize with trader pool allocation
+    # Resolve subnet owner hotkey UID from metagraph (for burning remaining weight when no miners)
+    owner_hotkey_uid: int | None = None
+    if metagraph is not None:
+        try:
+            owner_hotkey = metagraph.owner_hotkey
+            if owner_hotkey:
+                owner_hotkey_uid = subtensor.get_uid_for_hotkey_on_subnet(
+                    hotkey_ss58=owner_hotkey,
+                    netuid=settings.netuid
+                )
+                if owner_hotkey_uid is not None and owner_hotkey_uid >= 0:
+                    bt.logging.info(
+                        f"{ANSI_BOLD}{ANSI_MAGENTA}🔥 [EMISSION BURN HOTKEY]{ANSI_RESET} "
+                        f"Owner hotkey: {owner_hotkey}, UID: {ANSI_BOLD}{owner_hotkey_uid}{ANSI_RESET} - "
+                        f"If no miners are verified, remaining emissions go here for BURNING (not rewards)"
+                    )
+                else:
+                    bt.logging.warning(
+                        f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Subnet owner hotkey{ANSI_RESET} "
+                        f"{owner_hotkey} not registered on netuid {settings.netuid}."
+                    )
+                    owner_hotkey_uid = None
+        except Exception as exc:
+            bt.logging.warning(
+                f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} Could not resolve owner hotkey UID:{ANSI_RESET} {exc}"
+            )
+            owner_hotkey_uid = None
+
+    # Check if we have anything to publish (scores, trader pool, or owner hotkey)
+    if not scores and trader_pool_uid is None and owner_hotkey_uid is None:
+        bt.logging.warning(
+            f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_WARNING} No scores to publish and no trader pool or owner hotkey configured;{ANSI_RESET} "
+            f"skipping set_weights."
+        )
+        return {}
+    
+    if not scores:
+        allocations = []
+        if trader_pool_uid is not None:
+            allocations.append(f"trader rewards pool ({trader_pool_weight * 100:.2f}%)")
+        if owner_hotkey_uid is not None:
+            remaining = 1.0 - (trader_pool_weight if trader_pool_uid else 0.0)
+            allocations.append(f"🔥 emission burn via owner hotkey ({remaining * 100:.2f}%)")
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_CYAN}No verified miners yet.{ANSI_RESET} "
+            f"Weight allocation: {', '.join(allocations)}"
+        )
+
+    # Normalize with trader pool allocation and owner hotkey for burning
     weights = _normalize(
         scores,
         trader_pool_uid=trader_pool_uid,
         trader_pool_weight=trader_pool_weight if trader_pool_uid is not None else 0.0,
+        owner_hotkey_uid=owner_hotkey_uid,
     )
     
     uids = list(weights.keys())

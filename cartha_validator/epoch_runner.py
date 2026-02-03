@@ -81,6 +81,7 @@ def run_epoch(
     validator_uid: int | None = None,
     args: Any | None = None,
     force: bool = False,
+    hotkey_ss58: str | None = None,
 ) -> dict[str, Any]:
     """Run a single epoch: fetch entries, process, score, and publish weights.
 
@@ -99,6 +100,7 @@ def run_epoch(
         validator_uid: Validator UID (optional)
         args: Command-line arguments (for log_dir)
         force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
+        hotkey_ss58: Hotkey SS58 address (optional, derived from wallet if not provided)
 
     Returns:
         Dictionary with scores, weights, ranking, and summary
@@ -113,9 +115,15 @@ def run_epoch(
     )
 
     # Get validator hotkey for server-side whitelist check
-    if wallet is None:
+    # Use provided hotkey_ss58 if available, otherwise derive from wallet
+    if hotkey_ss58:
+        validator_hotkey = hotkey_ss58
+    elif wallet is not None:
+        validator_hotkey = wallet.hotkey.ss58_address
+    else:
+        # Create default wallet as fallback
         wallet = bt.wallet()
-    validator_hotkey = wallet.hotkey.ss58_address
+        validator_hotkey = wallet.hotkey.ss58_address
     
     # Detect if we're on testnet (for demo mode detection)
     is_testnet = False
