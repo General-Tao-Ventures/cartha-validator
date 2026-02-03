@@ -12,24 +12,156 @@ echo "Cartha Validator Manager Installation"
 echo "=========================================="
 echo ""
 
-# Check if running as root
-if [ "$EUID" -eq 0 ]; then
-    echo "Warning: Running as root. Consider using a non-root user."
-    echo ""
+# Check if running as root (Linux/macOS only - skip on Windows)
+if [[ "$OSTYPE" != "msys" ]] && [[ "$OSTYPE" != "cygwin" ]] && [[ "$OSTYPE" != "win32" ]]; then
+    if [ "$EUID" -eq 0 ] 2>/dev/null; then
+        echo "Warning: Running as root. Consider using a non-root user."
+        echo ""
+    fi
 fi
 
 # 1. Check Node.js and install PM2
-echo "Step 1: Installing PM2..."
+echo "Step 1: Checking Node.js and PM2..."
+
+# Function to detect OS and suggest Node.js installation
+install_nodejs() {
+    echo ""
+    echo "Node.js is required but not installed."
+    echo ""
+    
+    # Detect OS
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew &> /dev/null; then
+            echo "Detected: macOS with Homebrew"
+            read -p "Install Node.js via Homebrew? [Y/n]: " INSTALL_NODE
+            INSTALL_NODE=${INSTALL_NODE:-Y}
+            if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+                echo "Installing Node.js..."
+                brew install node
+                return 0
+            fi
+        else
+            echo "Detected: macOS"
+            echo ""
+            echo "Install Node.js using one of these methods:"
+            echo "  1. Install Homebrew first: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            echo "     Then run: brew install node"
+            echo "  2. Download from: https://nodejs.org/"
+        fi
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if command -v apt &> /dev/null; then
+            echo "Detected: Linux (Debian/Ubuntu)"
+            read -p "Install Node.js via apt? [Y/n]: " INSTALL_NODE
+            INSTALL_NODE=${INSTALL_NODE:-Y}
+            if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+                echo "Installing Node.js..."
+                sudo apt update && sudo apt install -y nodejs npm
+                return 0
+            fi
+        elif command -v yum &> /dev/null; then
+            echo "Detected: Linux (CentOS/RHEL)"
+            read -p "Install Node.js via yum? [Y/n]: " INSTALL_NODE
+            INSTALL_NODE=${INSTALL_NODE:-Y}
+            if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+                echo "Installing Node.js..."
+                sudo yum install -y nodejs npm
+                return 0
+            fi
+        elif command -v dnf &> /dev/null; then
+            echo "Detected: Linux (Fedora)"
+            read -p "Install Node.js via dnf? [Y/n]: " INSTALL_NODE
+            INSTALL_NODE=${INSTALL_NODE:-Y}
+            if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+                echo "Installing Node.js..."
+                sudo dnf install -y nodejs npm
+                return 0
+            fi
+        elif command -v pacman &> /dev/null; then
+            echo "Detected: Linux (Arch)"
+            read -p "Install Node.js via pacman? [Y/n]: " INSTALL_NODE
+            INSTALL_NODE=${INSTALL_NODE:-Y}
+            if [[ "$INSTALL_NODE" =~ ^[Yy]$ ]]; then
+                echo "Installing Node.js..."
+                sudo pacman -S --noconfirm nodejs npm
+                return 0
+            fi
+        else
+            echo "Detected: Linux"
+            echo ""
+            echo "Install Node.js using one of these methods:"
+            echo "  1. Use nvm: curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash"
+            echo "     Then run: nvm install --lts"
+            echo "  2. Download from: https://nodejs.org/"
+        fi
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+        # Windows
+        echo "Detected: Windows"
+        echo ""
+        echo "Install Node.js using one of these methods:"
+        echo "  1. Download from: https://nodejs.org/"
+        echo "  2. Use Chocolatey: choco install nodejs"
+        echo "  3. Use Scoop: scoop install nodejs"
+    else
+        echo "Unknown OS: $OSTYPE"
+        echo "Please install Node.js from: https://nodejs.org/"
+    fi
+    
+    echo ""
+    echo "After installing Node.js, run this script again."
+    return 1
+}
+
 if ! command -v node &> /dev/null; then
-    echo "Error: Node.js is not installed."
-    echo "Please install Node.js first: https://nodejs.org/"
-    exit 1
+    if ! install_nodejs; then
+        exit 1
+    fi
+    # Verify installation worked
+    if ! command -v node &> /dev/null; then
+        echo "Error: Node.js installation failed or not in PATH."
+        echo "Please install manually and run this script again."
+        exit 1
+    fi
 fi
+echo "✓ Node.js: $(node --version)"
 
 if ! command -v pm2 &> /dev/null; then
     echo "Installing PM2 globally..."
-    npm install -g pm2
-    echo "✓ PM2 installed"
+    
+    # Try installing without sudo first
+    if npm install -g pm2 2>/dev/null; then
+        echo "✓ PM2 installed"
+    else
+        # Permission denied - handle based on OS
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+            # Windows - no sudo, need to run as Administrator
+            echo ""
+            echo "Permission denied. On Windows, please either:"
+            echo "  1. Run this script from an Administrator terminal (right-click -> Run as Administrator)"
+            echo "  2. Or install PM2 manually in an Administrator terminal: npm install -g pm2"
+            echo ""
+            echo "After installing PM2, run this script again."
+            exit 1
+        else
+            # Linux/macOS - try with sudo
+            echo "Permission denied. Trying with sudo..."
+            if sudo npm install -g pm2; then
+                echo "✓ PM2 installed (with sudo)"
+            else
+                echo ""
+                echo "Failed to install PM2. You can try manually:"
+                echo "  Option 1: sudo npm install -g pm2"
+                echo "  Option 2: Configure npm to use a user directory:"
+                echo "            mkdir -p ~/.npm-global"
+                echo "            npm config set prefix '~/.npm-global'"
+                echo "            echo 'export PATH=~/.npm-global/bin:\$PATH' >> ~/.bashrc"
+                echo "            source ~/.bashrc"
+                echo "            npm install -g pm2"
+                exit 1
+            fi
+        fi
+    fi
 else
     echo "✓ PM2 is already installed: $(pm2 --version)"
 fi
@@ -37,17 +169,105 @@ echo ""
 
 # 2. Check Python and uv
 echo "Step 2: Checking Python and uv..."
+
+# On Windows, python3 might be called 'python'
+PYTHON_CMD="python3"
 if ! command -v python3 &> /dev/null; then
-    echo "Error: Python 3 is not installed."
-    exit 1
+    if command -v python &> /dev/null; then
+        # Check if 'python' is Python 3
+        PYTHON_VERSION=$(python --version 2>&1)
+        if [[ "$PYTHON_VERSION" == *"Python 3"* ]]; then
+            PYTHON_CMD="python"
+        else
+            PYTHON_CMD=""
+        fi
+    else
+        PYTHON_CMD=""
+    fi
 fi
 
-if ! command -v uv &> /dev/null; then
-    echo "Error: uv is not installed."
-    echo "Install with: curl -LsSf https://astral.sh/uv/run.sh | sh"
+if [ -z "$PYTHON_CMD" ] || ! command -v $PYTHON_CMD &> /dev/null; then
+    echo ""
+    echo "Python 3 is required but not installed."
+    echo ""
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "Install Python on macOS:"
+        echo "  brew install python3"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if command -v apt &> /dev/null; then
+            echo "Install Python on Ubuntu/Debian:"
+            echo "  sudo apt install python3 python3-pip"
+        else
+            echo "Install Python using your package manager or from: https://www.python.org/"
+        fi
+    elif [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+        echo "Install Python on Windows:"
+        echo "  1. Download from: https://www.python.org/downloads/"
+        echo "  2. Or use: winget install Python.Python.3.11"
+        echo "  3. Or use: choco install python"
+    else
+        echo "Install Python from: https://www.python.org/"
+    fi
     exit 1
 fi
-echo "✓ Python: $(python3 --version)"
+echo "✓ Python: $($PYTHON_CMD --version)"
+
+if ! command -v uv &> /dev/null; then
+    echo ""
+    echo "uv (Python package manager) is required but not installed."
+    read -p "Install uv now? [Y/n]: " INSTALL_UV
+    INSTALL_UV=${INSTALL_UV:-Y}
+    if [[ "$INSTALL_UV" =~ ^[Yy]$ ]]; then
+        echo "Installing uv..."
+        
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+            # Windows - use PowerShell installer
+            if command -v powershell &> /dev/null; then
+                powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+            else
+                echo "Please install uv manually using PowerShell:"
+                echo "  powershell -ExecutionPolicy ByPass -c \"irm https://astral.sh/uv/install.ps1 | iex\""
+                exit 1
+            fi
+        else
+            # Linux/macOS - use curl
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+        fi
+        
+        # Source the shell config to get uv in PATH
+        if [ -f "$HOME/.cargo/env" ]; then
+            source "$HOME/.cargo/env"
+        fi
+        # Also check common uv install locations
+        if [ -f "$HOME/.local/bin/uv" ]; then
+            export PATH="$HOME/.local/bin:$PATH"
+        fi
+        # Windows uv location
+        if [ -f "$USERPROFILE/.local/bin/uv.exe" ] 2>/dev/null; then
+            export PATH="$USERPROFILE/.local/bin:$PATH"
+        fi
+        
+        # Verify installation
+        if ! command -v uv &> /dev/null; then
+            echo ""
+            echo "uv installed but not in PATH. Please restart your terminal and run this script again."
+            if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+                echo "On Windows, you may need to restart your terminal or add uv to PATH."
+            else
+                echo "Or manually add to PATH: export PATH=\"\$HOME/.local/bin:\$PATH\""
+            fi
+            exit 1
+        fi
+        echo "✓ uv installed"
+    else
+        if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+            echo "Install uv with PowerShell: irm https://astral.sh/uv/install.ps1 | iex"
+        else
+            echo "Install uv with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        fi
+        exit 1
+    fi
+fi
 echo "✓ uv: $(uv --version)"
 echo ""
 
@@ -75,8 +295,8 @@ echo "Configuration"
 echo "=========================================="
 echo ""
 
-# Prompt for wallet name
-read -p "Enter your wallet name [coldkey]: " WALLET_NAME
+# Prompt for wallet name (required)
+read -p "Enter your wallet name (coldkey): " WALLET_NAME
 if [ -z "$WALLET_NAME" ]; then
     echo "Error: Wallet name is required"
     exit 1
@@ -113,7 +333,7 @@ echo "Step 5: Updating ecosystem.config.js..."
 cp "$ECOSYSTEM_FILE" "$ECOSYSTEM_FILE.backup"
 
 # Use Python to update the JavaScript file properly
-python3 << EOF
+$PYTHON_CMD << EOF
 import re
 
 ecosystem_file = "$ECOSYSTEM_FILE"
@@ -171,7 +391,7 @@ EOF
 echo ""
 
 # Extract hotkey SS58 address for validator manager (silent on failure)
-HOTKEY_SS58=$(python3 << EOF 2>/dev/null
+HOTKEY_SS58=$($PYTHON_CMD << EOF 2>/dev/null
 import sys
 try:
     import bittensor as bt
@@ -186,7 +406,7 @@ if [ -n "$HOTKEY_SS58" ]; then
     echo "Step 5.5: Resolved hotkey SS58: $HOTKEY_SS58"
     
     # Update ecosystem.config.js to add hotkey-ss58 and netuid to validator manager args
-    python3 << EOF 2>/dev/null
+    $PYTHON_CMD << EOF 2>/dev/null
 import re
 
 ecosystem_file = "$ECOSYSTEM_FILE"
@@ -252,15 +472,24 @@ fi
 echo ""
 
 
-# 8. Setup PM2 startup
+# 8. Setup PM2 startup (skip on Windows - pm2 startup doesn't work the same way)
 echo "Step 7: Setting up PM2 startup..."
-pm2 startup > /tmp/pm2_startup.sh 2>&1 || true
-if [ -f /tmp/pm2_startup.sh ]; then
-    STARTUP_CMD=$(cat /tmp/pm2_startup.sh | grep -E "sudo|pm2" | head -1)
-    if [ -n "$STARTUP_CMD" ]; then
-        echo "PM2 startup command generated (save this for later):"
-        echo "  $STARTUP_CMD"
-        echo ""
+if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "win32" ]]; then
+    echo "Note: On Windows, PM2 startup is handled differently."
+    echo "To run PM2 on Windows startup, consider using Task Scheduler or a Windows service."
+    echo "See: https://pm2.keymetrics.io/docs/usage/startup/#windows-consideration"
+else
+    # Use cross-platform temp directory
+    TEMP_FILE="${TMPDIR:-/tmp}/pm2_startup.sh"
+    pm2 startup > "$TEMP_FILE" 2>&1 || true
+    if [ -f "$TEMP_FILE" ]; then
+        STARTUP_CMD=$(grep -E "sudo|pm2" "$TEMP_FILE" | head -1)
+        if [ -n "$STARTUP_CMD" ]; then
+            echo "PM2 startup command generated (save this for later):"
+            echo "  $STARTUP_CMD"
+            echo ""
+        fi
+        rm -f "$TEMP_FILE"
     fi
 fi
 
