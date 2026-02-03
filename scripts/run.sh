@@ -82,12 +82,9 @@ if [ -z "$WALLET_NAME" ]; then
     exit 1
 fi
 
-# Prompt for hotkey
-read -p "Enter your hotkey name: " WALLET_HOTKEY
-if [ -z "$WALLET_HOTKEY" ]; then
-    echo "Error: Hotkey name is required"
-    exit 1
-fi
+# Prompt for hotkey (default: "default")
+read -p "Enter your hotkey name [default]: " WALLET_HOTKEY
+WALLET_HOTKEY=${WALLET_HOTKEY:-default}
 
 # Prompt for netuid
 echo ""
