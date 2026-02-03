@@ -76,7 +76,7 @@ echo "=========================================="
 echo ""
 
 # Prompt for wallet name
-read -p "Enter your wallet name (coldkey): " WALLET_NAME
+read -p "Enter your wallet name [coldkey]: " WALLET_NAME
 if [ -z "$WALLET_NAME" ]; then
     echo "Error: Wallet name is required"
     exit 1
