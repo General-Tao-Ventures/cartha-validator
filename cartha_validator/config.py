@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, HttpUrl
 
 from .epoch import epoch_start
 
-DEFAULT_VERIFIER_URL = "https://cartha-verifier-193291340038.us-central1.run.app"
+DEFAULT_VERIFIER_URL = "https://api.cartha.finance"
 
 # Default leaderboard API URL (mainnet)
 DEFAULT_LEADERBOARD_API_URL = "https://cartha-leaderboard-api-193291340038.us-central1.run.app"

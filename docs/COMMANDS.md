@@ -22,7 +22,7 @@ uv run python -m cartha_validator.main [OPTIONS]
 
 | Argument | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--verifier-url` | string | `https://cartha-verifier-193291340038.us-central1.run.app` | Base URL for the Cartha verifier |
+| `--verifier-url` | string | `https://api.cartha.finance` | Base URL for the Cartha verifier |
 | `--timeout` | float | `15.0` | HTTP timeout (seconds) for verifier calls |
 
 ### Leaderboard Configuration
@@ -199,7 +199,7 @@ The validator uses `cartha_validator/config.py` for default settings. You can ov
 
 ```python
 netuid: 35
-verifier_url: "https://cartha-verifier-193291340038.us-central1.run.app"
+verifier_url: "https://api.cartha.finance"
 leaderboard_api_url: "https://cartha-leaderboard-api-193291340038.us-central1.run.app"
 max_lock_days: 365
 token_decimals: 6
@@ -213,7 +213,7 @@ You can set these environment variables to configure the validator:
 
 | Variable | Description | Default |
 | --- | --- | --- |
-| `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://cartha-verifier-193291340038.us-central1.run.app` |
+| `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://api.cartha.finance` |
 | `LEADERBOARD_API_URL` | Leaderboard API endpoint URL | `https://cartha-leaderboard-api-193291340038.us-central1.run.app` |
 | `CARTHA_NETUID` | Subnet netuid | `35` |
 
@@ -281,7 +281,7 @@ After=network.target
 Type=simple
 User=validator
 WorkingDirectory=/path/to/cartha-validator
-Environment="CARTHA_VERIFIER_URL=https://cartha-verifier-193291340038.us-central1.run.app"
+Environment="CARTHA_VERIFIER_URL=https://api.cartha.finance"
 ExecStart=/path/to/venv/bin/python -m cartha_validator.main \
   --wallet-name cold \
   --wallet-hotkey hot \
