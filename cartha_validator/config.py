@@ -274,32 +274,27 @@ def parse_args() -> argparse.Namespace:
         "--logging.debug=False" in sys.argv or "--no-logging.debug" in sys.argv
     )
 
-    # Create bt.Config object for proper Bittensor integration
-    # bt.config() needs a parser with args added, but it will parse sys.argv itself
-    # So we create a fresh parser here
-    bt_parser = argparse.ArgumentParser()
-    bt.subtensor.add_args(bt_parser)
-    bt.wallet.add_args(bt_parser)
-    bt.logging.add_args(bt_parser)
-    config = bt.config(bt_parser)
-
-    # Enable debug logging by default unless explicitly disabled
-    if not debug_explicitly_disabled:
-        config.logging.debug = True
-
-    # Override wallet name/hotkey from our custom args (--wallet-name/--wallet-hotkey)
-    # Only set if provided (allows --hotkey-ss58 mode without wallet)
-    if parsed_args.wallet_name:
-        config.wallet.name = parsed_args.wallet_name
-    if parsed_args.wallet_hotkey:
-        config.wallet.hotkey = parsed_args.wallet_hotkey
-
-    # Override netuid from our args
-    config.netuid = parsed_args.netuid
-
-    # Override subtensor network if provided
-    if hasattr(parsed_args, "subtensor_network") and parsed_args.subtensor_network:
-        config.subtensor.network = parsed_args.subtensor_network
+    # Create a simple config namespace for Bittensor components
+    # Note: bt.config() was removed in newer bittensor versions
+    class SimpleNamespace:
+        """Simple namespace for nested config attributes."""
+        def __init__(self, **kwargs: object) -> None:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+    
+    config = SimpleNamespace(
+        wallet=SimpleNamespace(
+            name=parsed_args.wallet_name or "default",
+            hotkey=parsed_args.wallet_hotkey or "default",
+        ),
+        subtensor=SimpleNamespace(
+            network=getattr(parsed_args, "subtensor_network", None) or getattr(parsed_args, "subtensor.network", None),
+        ),
+        logging=SimpleNamespace(
+            debug=not debug_explicitly_disabled,
+        ),
+        netuid=parsed_args.netuid,
+    )
 
     # Attach config to parsed_args
     parsed_args.config = config
