@@ -420,9 +420,10 @@ def process_entries(
         hotkey = grouped.get(uid, {}).get("hotkey", "unknown")
         pool_count = len(combined_positions)
         total_amount = sum(pos.get("amount", 0) for pos in combined_positions.values())
+        total_amount_usdc = total_amount / unit
         bt.logging.debug(
             f"[SCORING] uid={uid} hotkey={hotkey}: Scoring {pool_count} pool(s), "
-            f"total_amount={total_amount} base_units ({total_amount / unit:.2f} USDC)"
+            f"total_amount={total_amount} base_units ({total_amount_usdc:.2f} USDC)"
         )
         
         # Log each pool being scored
@@ -435,7 +436,17 @@ def process_entries(
                 f"lock_days={pool_lock_days}"
             )
 
-        score = score_entry(combined_positions, settings=settings)
+        # Check minimum total assets threshold
+        min_threshold = settings.min_total_assets_usdc
+        if total_amount_usdc < min_threshold:
+            bt.logging.info(
+                f"{ANSI_BOLD}{ANSI_YELLOW}[MIN ASSETS]{ANSI_RESET} "
+                f"uid={uid} hotkey={hotkey}: Total assets {total_amount_usdc:,.2f} USDC "
+                f"< minimum threshold {min_threshold:,.2f} USDC → score=0"
+            )
+            score = 0.0
+        else:
+            score = score_entry(combined_positions, settings=settings)
         scores[uid] = score
         
         # Log final score for this miner

@@ -134,6 +134,11 @@ class ValidatorSettings(BaseModel):
         default=DAILY_ALPHA_EMISSIONS,
         description="Total alpha emissions per day distributed across all miners",
     )
+    # Minimum total assets threshold
+    min_total_assets_usdc: float = Field(
+        default=100_000.0,
+        description="Minimum total assets in USDC required for a miner to receive weight. Miners below this threshold score 0.",
+    )
 
 
 DEFAULT_SETTINGS = ValidatorSettings(

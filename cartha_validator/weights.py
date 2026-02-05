@@ -62,32 +62,42 @@ def _normalize(
     excluded_uids = {trader_pool_uid, owner_hotkey_uid} - {None}
     miner_scores = {uid: score for uid, score in positive.items() if uid not in excluded_uids}
     
+    # Filter out miners with 0 score - they don't receive any weight
+    positive_miner_scores = {uid: score for uid, score in miner_scores.items() if score > 0}
+    zero_score_count = len(miner_scores) - len(positive_miner_scores)
+    
+    if zero_score_count > 0:
+        bt.logging.info(
+            f"{ANSI_BOLD}{ANSI_YELLOW}[ZERO SCORE]{ANSI_RESET} "
+            f"Excluding {zero_score_count} miner(s) with score=0 from weight allocation"
+        )
+    
     # Normalize miner scores to fill remaining weight
-    miner_total = sum(miner_scores.values())
+    miner_total = sum(positive_miner_scores.values())
     
     weights: dict[int, float] = {}
     
     if miner_total <= 0:
-        # No valid miner scores
-        if miner_scores:
-            # Miners exist but all have 0 score - distribute remaining weight equally
-            bt.logging.warning(
-                f"{ANSI_BOLD}{ANSI_YELLOW}Total miner score non-positive; "
-                f"distributing remaining weight equally among {len(miner_scores)} miners.{ANSI_RESET}"
-            )
-            equal_weight = remaining_weight / len(miner_scores)
-            weights = {uid: equal_weight for uid in miner_scores}
-        elif owner_hotkey_uid is not None:
-            # No miners at all - allocate remaining weight to owner hotkey for burning
+        # No miners with positive scores - burn remaining weight to owner hotkey
+        if owner_hotkey_uid is not None:
+            # Allocate remaining weight to owner hotkey for burning
             # IMPORTANT: This is for EMISSION BURNING, not rewards. The owner hotkey burns
-            # emissions to reduce inflation when no miners are active yet.
-            bt.logging.info(
-                f"{ANSI_BOLD}{ANSI_MAGENTA}🔥 [EMISSION BURN]{ANSI_RESET} "
-                f"No verified miners yet - allocating {ANSI_BOLD}{remaining_weight:.6f}{ANSI_RESET} "
-                f"({remaining_weight * 100:.4f}%) to subnet owner hotkey (UID {owner_hotkey_uid}) "
-                f"for {ANSI_BOLD}BURNING EMISSIONS{ANSI_RESET}. "
-                f"This weight goes to the owner hotkey which burns TAO, NOT for personal rewards."
-            )
+            # emissions to reduce inflation when no miners qualify for rewards.
+            if miner_scores:
+                # Miners exist but all scored 0 (e.g., below min threshold)
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_MAGENTA}🔥 [EMISSION BURN]{ANSI_RESET} "
+                    f"All {len(miner_scores)} miners scored 0 - allocating {ANSI_BOLD}{remaining_weight:.6f}{ANSI_RESET} "
+                    f"({remaining_weight * 100:.4f}%) to subnet owner hotkey (UID {owner_hotkey_uid}) "
+                    f"for {ANSI_BOLD}BURNING EMISSIONS{ANSI_RESET}. "
+            else:
+                # No miners at all
+                bt.logging.info(
+                    f"{ANSI_BOLD}{ANSI_MAGENTA}🔥 [EMISSION BURN]{ANSI_RESET} "
+                    f"No verified miners yet - allocating {ANSI_BOLD}{remaining_weight:.6f}{ANSI_RESET} "
+                    f"({remaining_weight * 100:.4f}%) to subnet owner hotkey (UID {owner_hotkey_uid}) "
+                    f"for {ANSI_BOLD}BURNING EMISSIONS{ANSI_RESET}. "
+                )
             weights[owner_hotkey_uid] = remaining_weight
         else:
             # No miners and no owner hotkey configured
@@ -97,10 +107,11 @@ def _normalize(
             )
             weights = {}
     else:
-        # Normalize miners to fill remaining weight (e.g., 75.6098% when trader pool takes 24.3902%)
+        # Normalize miners with positive scores to fill remaining weight
+        # (e.g., 75.6098% when trader pool takes 24.3902%)
         weights = {
             uid: (score / miner_total) * remaining_weight
-            for uid, score in miner_scores.items()
+            for uid, score in positive_miner_scores.items()
         }
     
     # Add trader pool with fixed weight
