@@ -68,7 +68,15 @@ def main() -> None:
     bt.logging.info("Setting up bittensor objects.")
 
     # Initialize subtensor FIRST - needed for subnet owner verification
-    subtensor = bt.subtensor(config=config)
+    # Pass network directly instead of config (newer bittensor API)
+    subtensor_network = getattr(config.subtensor, "network", None)
+    subtensor_endpoint = getattr(config.subtensor, "chain_endpoint", None)
+    if subtensor_endpoint:
+        subtensor = bt.subtensor(network=subtensor_endpoint)
+    elif subtensor_network:
+        subtensor = bt.subtensor(network=subtensor_network)
+    else:
+        subtensor = bt.subtensor()
     bt.logging.info(f"Subtensor: {subtensor}")
 
     # Create and sync metagraph (like template does)
@@ -137,7 +145,11 @@ def main() -> None:
             
             if args.wallet_hotkey:
                 # Hotkey name explicitly provided - load it directly
-                wallet = bt.wallet(config=config)
+                wallet = bt.wallet(
+                    name=config.wallet.name,
+                    hotkey=config.wallet.hotkey,
+                    path=config.wallet.path,
+                )
                 wallet_hotkey_ss58 = wallet.hotkey.ss58_address
                 
                 if wallet_hotkey_ss58 != hotkey_ss58:
@@ -220,7 +232,11 @@ def main() -> None:
                 "Must provide --wallet-name or --hotkey-ss58"
             )
         
-        wallet = bt.wallet(config=config)
+        wallet = bt.wallet(
+            name=config.wallet.name,
+            hotkey=config.wallet.hotkey,
+            path=config.wallet.path,
+        )
         hotkey_ss58 = wallet.hotkey.ss58_address
         bt.logging.info(f"Wallet: {wallet}")
 

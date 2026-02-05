@@ -281,17 +281,32 @@ def parse_args() -> argparse.Namespace:
         def __init__(self, **kwargs: object) -> None:
             for key, value in kwargs.items():
                 setattr(self, key, value)
+        
+        def __repr__(self) -> str:
+            attrs = ", ".join(f"{k}={v!r}" for k, v in self.__dict__.items())
+            return f"Config({attrs})"
+    
+    # Get subtensor network from parsed args (handles both attribute styles)
+    subtensor_network = (
+        getattr(parsed_args, "subtensor_network", None) 
+        or getattr(parsed_args, "subtensor.network", None)
+    )
     
     config = SimpleNamespace(
         wallet=SimpleNamespace(
             name=parsed_args.wallet_name or "default",
             hotkey=parsed_args.wallet_hotkey or "default",
+            path="~/.bittensor/wallets",
         ),
         subtensor=SimpleNamespace(
-            network=getattr(parsed_args, "subtensor_network", None) or getattr(parsed_args, "subtensor.network", None),
+            network=subtensor_network,
+            chain_endpoint=getattr(parsed_args, "subtensor.chain_endpoint", None),
         ),
         logging=SimpleNamespace(
             debug=not debug_explicitly_disabled,
+            trace=False,
+            record_log=False,
+            logging_dir="~/.bittensor/miners",
         ),
         netuid=parsed_args.netuid,
     )

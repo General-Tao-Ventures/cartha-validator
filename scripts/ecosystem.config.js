@@ -42,7 +42,7 @@ module.exports = {
       // PLACEHOLDER: Replace YOUR_WALLET_NAME and YOUR_HOTKEY_NAME with your actual values
       // Example: 'run python -m cartha_validator.main --wallet-name my-wallet --wallet-hotkey my-hotkey --netuid 35'
       // For testnet, add: --subtensor.network test
-      args: 'run python -m cartha_validator.main --wallet-name YOUR_WALLET_NAME --wallet-hotkey YOUR_HOTKEY_NAME --netuid 35',
+      args: 'run python -m cartha_validator.main --wallet-name sn35 --wallet-hotkey default --netuid 35',
       cwd: path.resolve(__dirname, '..'),
       interpreter: 'none',
       autorestart: true,
