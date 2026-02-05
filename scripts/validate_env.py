@@ -103,14 +103,15 @@ def get_default_required_vars() -> list[str]:
 
     Returns:
         List of required environment variable names
+    
+    Note:
+        PARENT_VAULT_ADDRESS and PARENT_VAULT_RPC_URL have default values in config.py,
+        so they are not strictly required in .env. The validator will use defaults if not set.
     """
-    return [
-        "PARENT_VAULT_ADDRESS",
-        "PARENT_VAULT_RPC_URL",
-        # Note: VERIFIER_URL, WALLET_NAME, WALLET_HOTKEY, NETUID can come from
-        # command-line args or config, so they're optional in .env
-        # But we check for them if they're expected to be in .env
-    ]
+    # All environment variables now have defaults in config.py, so none are strictly required.
+    # Return an empty list - validation will always pass.
+    # Specific deployments can override with --required-vars if needed.
+    return []
 
 
 def main():

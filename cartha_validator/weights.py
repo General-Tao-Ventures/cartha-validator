@@ -90,6 +90,7 @@ def _normalize(
                     f"All {len(miner_scores)} miners scored 0 - allocating {ANSI_BOLD}{remaining_weight:.6f}{ANSI_RESET} "
                     f"({remaining_weight * 100:.4f}%) to subnet owner hotkey (UID {owner_hotkey_uid}) "
                     f"for {ANSI_BOLD}BURNING EMISSIONS{ANSI_RESET}. "
+                )
             else:
                 # No miners at all
                 bt.logging.info(
