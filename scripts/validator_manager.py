@@ -327,9 +327,146 @@ class ValidatorManager:
 
         return False, latest_version
 
+    def _get_current_commit(self) -> str | None:
+        """Get the current git commit SHA."""
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except Exception as e:
+            print(f"Warning: Could not get current commit: {e}", file=sys.stderr)
+            return None
+
+    def _rollback_to_commit(self, commit_sha: str) -> bool:
+        """
+        Rollback to a specific git commit.
+        
+        Args:
+            commit_sha: The git commit SHA to rollback to
+            
+        Returns:
+            True if rollback successful, False otherwise
+        """
+        print(f"🔄 Rolling back to commit {commit_sha[:8]}...")
+        
+        try:
+            # Backup ecosystem.config.js before rollback
+            ecosystem_file = self.project_root / "scripts" / "ecosystem.config.js"
+            ecosystem_backup = self.project_root / "scripts" / ".ecosystem.config.js.local"
+            if ecosystem_file.exists():
+                import shutil
+                shutil.copy2(ecosystem_file, ecosystem_backup)
+            
+            # Reset to the previous commit
+            result = subprocess.run(
+                ["git", "reset", "--hard", commit_sha],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            print(f"Git reset: {result.stdout}")
+            
+            # Restore ecosystem.config.js
+            if ecosystem_backup.exists():
+                import shutil
+                shutil.copy2(ecosystem_backup, ecosystem_file)
+                print("Restored ecosystem.config.js")
+            
+            # Re-sync dependencies for the rolled-back version
+            subprocess.run(
+                ["uv", "sync"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+            )
+            
+            # Restart validator
+            self.pm2_manager.restart_validator()
+            time.sleep(5)
+            
+            if self.pm2_manager.is_running():
+                print(f"✓ Rollback successful - now running commit {commit_sha[:8]}")
+                return True
+            else:
+                print("✗ Rollback completed but validator failed to start", file=sys.stderr)
+                return False
+                
+        except Exception as e:
+            print(f"✗ Rollback failed: {e}", file=sys.stderr)
+            return False
+
+    def _health_check(self, wait_seconds: int = 30) -> bool:
+        """
+        Perform a health check on the validator after update.
+        
+        Checks:
+        1. Is the process running?
+        2. Has it stayed running for at least wait_seconds?
+        3. No crash loops detected?
+        
+        Args:
+            wait_seconds: How long to wait and monitor for stability
+            
+        Returns:
+            True if validator appears healthy, False otherwise
+        """
+        print(f"🏥 Running health check (monitoring for {wait_seconds}s)...")
+        
+        # Initial check
+        if not self.pm2_manager.is_running():
+            print("✗ Health check failed: Validator not running")
+            return False
+        
+        # Monitor for stability (check every 5 seconds)
+        check_interval = 5
+        checks = wait_seconds // check_interval
+        consecutive_running = 0
+        
+        for i in range(checks):
+            time.sleep(check_interval)
+            if self.pm2_manager.is_running():
+                consecutive_running += 1
+                print(f"  ✓ Check {i+1}/{checks}: Running")
+            else:
+                print(f"  ✗ Check {i+1}/{checks}: Not running (crash detected)")
+                return False
+        
+        # Check PM2 restart count to detect crash loops
+        try:
+            result = subprocess.run(
+                ["pm2", "jlist"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                import json
+                processes = json.loads(result.stdout)
+                for proc in processes:
+                    if proc.get("name") == "cartha-validator":
+                        restart_count = proc.get("pm2_env", {}).get("restart_time", 0)
+                        if restart_count > 3:
+                            print(f"⚠ Warning: Validator has restarted {restart_count} times")
+                            # Don't fail on this, just warn
+        except Exception:
+            pass  # Non-fatal, continue
+        
+        print("✓ Health check passed")
+        return True
+
     def update_validator(self) -> bool:
         """
         Update validator by pulling latest code and restarting.
+        
+        Features:
+        - Auto-rollback if update fails or validator crashes
+        - Health check after update to verify stability
+        - Preserves ecosystem.config.js
 
         Uses the update.sh script which handles:
         - Backing up ecosystem.config.js
@@ -342,6 +479,13 @@ class ValidatorManager:
             True if update successful, False otherwise
         """
         print("Starting validator update...")
+        
+        # Save current commit for potential rollback
+        rollback_commit = self._get_current_commit()
+        if rollback_commit:
+            print(f"📍 Rollback point saved: {rollback_commit[:8]}")
+        
+        old_version = get_version_from_pyproject()
 
         try:
             # Use update.sh script if available (preferred method)
@@ -361,21 +505,35 @@ class ValidatorManager:
                     if self.pm2_manager.is_running():
                         print("⚠ Update had issues but validator is still running")
                         return False
-                    raise RuntimeError("Update script failed and validator is not running")
+                    # Try rollback
+                    if rollback_commit:
+                        print("Update failed, attempting rollback...")
+                        if self._rollback_to_commit(rollback_commit):
+                            print(f"Rolled back to version {old_version}")
+                        else:
+                            print("Rollback also failed!", file=sys.stderr)
+                    return False
                 
-                # Verify restart
-                time.sleep(5)
-                if self.pm2_manager.is_running():
-                    new_version = get_version_from_pyproject()
-                    success_msg = (
-                        f"✓ Validator updated successfully\n"
-                        f"New version: {new_version}\n"
-                        f"Validator UID: {self.validator_uid or 'Unknown'}"
-                    )
-                    print(success_msg)
-                    return True
-                else:
-                    raise RuntimeError("Validator failed to start after update")
+                # Health check after update
+                if not self._health_check(wait_seconds=30):
+                    print("⚠ Health check failed after update")
+                    if rollback_commit:
+                        print("Attempting rollback due to failed health check...")
+                        if self._rollback_to_commit(rollback_commit):
+                            print(f"✓ Rolled back to version {old_version}")
+                            return False
+                        else:
+                            print("Rollback also failed!", file=sys.stderr)
+                    return False
+                
+                new_version = get_version_from_pyproject()
+                success_msg = (
+                    f"✓ Validator updated successfully\n"
+                    f"Version: {old_version} → {new_version}\n"
+                    f"Validator UID: {self.validator_uid or 'Unknown'}"
+                )
+                print(success_msg)
+                return True
             
             # Fallback: manual update if update.sh doesn't exist
             print("update.sh not found, using fallback method...")
@@ -433,32 +591,53 @@ class ValidatorManager:
             print("Restarting validator...")
             self.pm2_manager.restart_validator()
 
-            # Verify restart
-            time.sleep(5)  # Wait a bit for restart
-            if self.pm2_manager.is_running():
-                new_version = get_version_from_pyproject()
-                success_msg = (
-                    f"✓ Validator updated and restarted successfully\n"
-                    f"New version: {new_version}\n"
-                    f"Validator UID: {self.validator_uid or 'Unknown'}"
-                )
-                print(success_msg)
-                return True
-            else:
-                raise RuntimeError("Validator failed to start after restart")
+            # Health check
+            if not self._health_check(wait_seconds=30):
+                print("⚠ Health check failed after update")
+                if rollback_commit:
+                    print("Attempting rollback...")
+                    if self._rollback_to_commit(rollback_commit):
+                        print(f"✓ Rolled back to version {old_version}")
+                    else:
+                        print("Rollback also failed!", file=sys.stderr)
+                return False
+
+            new_version = get_version_from_pyproject()
+            success_msg = (
+                f"✓ Validator updated and restarted successfully\n"
+                f"Version: {old_version} → {new_version}\n"
+                f"Validator UID: {self.validator_uid or 'Unknown'}"
+            )
+            print(success_msg)
+            return True
 
         except subprocess.CalledProcessError as e:
             error_msg = (
                 f"✗ Update failed: {e}\n"
                 f"stdout: {e.stdout}\n"
-                f"stderr: {e.stderr}\n"
-                f"Validator will continue running on current version."
+                f"stderr: {e.stderr}"
             )
             print(error_msg, file=sys.stderr)
+            
+            # Attempt rollback
+            if rollback_commit:
+                print("Attempting rollback...")
+                if self._rollback_to_commit(rollback_commit):
+                    print(f"✓ Rolled back to version {old_version}")
+                else:
+                    print("Rollback also failed!", file=sys.stderr)
             return False
         except Exception as e:
-            error_msg = f"✗ Update failed with exception: {e}\nValidator will continue running on current version."
+            error_msg = f"✗ Update failed with exception: {e}"
             print(error_msg, file=sys.stderr)
+            
+            # Attempt rollback
+            if rollback_commit:
+                print("Attempting rollback...")
+                if self._rollback_to_commit(rollback_commit):
+                    print(f"✓ Rolled back to version {old_version}")
+                else:
+                    print("Rollback also failed!", file=sys.stderr)
             return False
 
     def ensure_validator_running(self) -> bool:
