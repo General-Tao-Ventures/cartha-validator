@@ -39,5 +39,8 @@ uv.lock
 *.backup
 *.bak
 
-# PM2 ecosystem config backup (created by run.sh)
+# PM2 ecosystem config (contains validator-specific settings)
+# Use ecosystem.config.example.js as template
+scripts/ecosystem.config.js
 scripts/ecosystem.config.js.backup
+scripts/.ecosystem.config.js.local
