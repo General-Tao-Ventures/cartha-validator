@@ -1,18 +1,7 @@
 """Validator tooling for Cartha."""
 
-#fetch version from pyproject.toml
-version = None
-try:
-    with open("pyproject.toml", "r") as f:
-        version = f.read().split("version = ")[1].split("\n")[0].strip('"')
-    __version__ = version
-except (FileNotFoundError, IndexError):
-    try:
-        with open("../pyproject.toml", "r") as f:
-            version = f.read().split("version = ")[1].split("\n")[0].strip('"')
-    except (FileNotFoundError, IndexError):
-        version = None
-    __version__ = version
+# Version must match pyproject.toml - update both when releasing
+__version__ = "1.1.3"
 
 # Convert version string (e.g., "1.0.0") to spec_version integer (e.g., 1000)
 # Format: 1000 * major + 10 * minor + 1 * patch
