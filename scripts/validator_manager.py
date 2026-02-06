@@ -331,27 +331,63 @@ class ValidatorManager:
         """
         Update validator by pulling latest code and restarting.
 
+        Uses the update.sh script which handles:
+        - Backing up ecosystem.config.js
+        - Git pull with conflict resolution
+        - Restoring ecosystem.config.js
+        - uv sync
+        - PM2 restart
+
         Returns:
             True if update successful, False otherwise
         """
         print("Starting validator update...")
 
-        # Validate environment before update
-        env_file = self.project_root / ".env"
-        is_valid, missing_vars = validate_required_vars(
-            get_default_required_vars(),
-            env_file_path=env_file if env_file.exists() else None,
-        )
-
-        if not is_valid:
-            error_msg = (
-                f"✗ Environment validation failed. Missing variables: {', '.join(missing_vars)}\n"
-                f"Update aborted. Validator will continue running on current version."
-            )
-            print(error_msg, file=sys.stderr)
-            return False
-
         try:
+            # Use update.sh script if available (preferred method)
+            update_script = self.project_root / "scripts" / "update.sh"
+            if update_script.exists():
+                print("Using update.sh script...")
+                result = subprocess.run(
+                    ["bash", str(update_script)],
+                    cwd=self.project_root,
+                    capture_output=True,
+                    text=True,
+                )
+                print(result.stdout)
+                if result.returncode != 0:
+                    print(f"Update script stderr: {result.stderr}", file=sys.stderr)
+                    # Don't fail completely - the validator might still be running
+                    if self.pm2_manager.is_running():
+                        print("⚠ Update had issues but validator is still running")
+                        return False
+                    raise RuntimeError("Update script failed and validator is not running")
+                
+                # Verify restart
+                time.sleep(5)
+                if self.pm2_manager.is_running():
+                    new_version = get_version_from_pyproject()
+                    success_msg = (
+                        f"✓ Validator updated successfully\n"
+                        f"New version: {new_version}\n"
+                        f"Validator UID: {self.validator_uid or 'Unknown'}"
+                    )
+                    print(success_msg)
+                    return True
+                else:
+                    raise RuntimeError("Validator failed to start after update")
+            
+            # Fallback: manual update if update.sh doesn't exist
+            print("update.sh not found, using fallback method...")
+            
+            # Backup ecosystem.config.js
+            ecosystem_file = self.project_root / "scripts" / "ecosystem.config.js"
+            ecosystem_backup = self.project_root / "scripts" / ".ecosystem.config.js.local"
+            if ecosystem_file.exists():
+                import shutil
+                shutil.copy2(ecosystem_file, ecosystem_backup)
+                print("Backed up ecosystem.config.js")
+            
             # Git pull
             print("Pulling latest code...")
             result = subprocess.run(
@@ -359,9 +395,28 @@ class ValidatorManager:
                 cwd=self.project_root,
                 capture_output=True,
                 text=True,
-                check=True,
             )
-            print(f"Git pull: {result.stdout}")
+            if result.returncode != 0:
+                # Try reset if pull fails
+                print("Git pull failed, attempting reset...")
+                subprocess.run(
+                    ["git", "fetch", "origin"],
+                    cwd=self.project_root,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "reset", "--hard", "origin/main"],
+                    cwd=self.project_root,
+                    capture_output=True,
+                )
+            print(f"Git: {result.stdout}")
+            
+            # Restore ecosystem.config.js if needed
+            if ecosystem_backup.exists():
+                if not ecosystem_file.exists():
+                    import shutil
+                    shutil.copy2(ecosystem_backup, ecosystem_file)
+                    print("Restored ecosystem.config.js from backup")
 
             # Install dependencies
             print("Installing dependencies...")
