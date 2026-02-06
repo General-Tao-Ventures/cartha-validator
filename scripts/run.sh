@@ -1,16 +1,61 @@
 #!/bin/bash
 # Interactive installation script for validator manager
 # One-stop setup for validators
+#
+# This script will:
+# - Install dependencies (Node.js, PM2, Python, uv)
+# - Configure your validator (wallet, hotkey, network)
+# - Start the validator via PM2
+#
+# If already configured, it will skip interactive setup and just restart.
+# For updates only (no reconfiguration), use: ./scripts/update.sh
 
 set -e  # Exit on error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ECOSYSTEM_FILE="$SCRIPT_DIR/ecosystem.config.js"
+ECOSYSTEM_EXAMPLE="$SCRIPT_DIR/ecosystem.config.example.js"
+
+# Check if already configured (ecosystem.config.js exists and has no placeholders)
+ALREADY_CONFIGURED=false
+if [ -f "$ECOSYSTEM_FILE" ]; then
+    if ! grep -q "YOUR_WALLET_NAME\|YOUR_HOTKEY_SS58\|YOUR_HOTKEY_NAME" "$ECOSYSTEM_FILE"; then
+        ALREADY_CONFIGURED=true
+    fi
+fi
 
 echo "=========================================="
 echo "Cartha Validator Manager Installation"
 echo "=========================================="
 echo ""
+
+if [ "$ALREADY_CONFIGURED" = true ]; then
+    echo "✓ Existing configuration detected!"
+    echo ""
+    echo "Your ecosystem.config.js is already configured."
+    echo "Running update and restart..."
+    echo ""
+    
+    # Run the update script instead
+    if [ -f "$SCRIPT_DIR/update.sh" ]; then
+        chmod +x "$SCRIPT_DIR/update.sh"
+        exec "$SCRIPT_DIR/update.sh"
+    else
+        # Fallback if update.sh doesn't exist
+        cd "$PROJECT_ROOT"
+        uv sync
+        pm2 restart cartha-validator cartha-validator-manager 2>/dev/null || pm2 start "$ECOSYSTEM_FILE"
+        pm2 save --force
+        echo ""
+        echo "✓ Validator restarted!"
+        echo ""
+        echo "To reconfigure, delete ecosystem.config.js and run this script again:"
+        echo "  rm $ECOSYSTEM_FILE"
+        echo "  ./scripts/run.sh"
+        exit 0
+    fi
+fi
 
 # Check if running as root (Linux/macOS only - skip on Windows)
 if [[ "$OSTYPE" != "msys" ]] && [[ "$OSTYPE" != "cygwin" ]] && [[ "$OSTYPE" != "win32" ]]; then
@@ -278,15 +323,18 @@ uv sync
 echo "✓ Dependencies installed"
 echo ""
 
-# 4. Verify ecosystem.config.js exists
-echo "Step 4: Verifying PM2 ecosystem config..."
-ECOSYSTEM_FILE="$SCRIPT_DIR/ecosystem.config.js"
+# 4. Prepare ecosystem.config.js
+echo "Step 4: Preparing PM2 ecosystem config..."
 if [ ! -f "$ECOSYSTEM_FILE" ]; then
-    echo "Error: ecosystem.config.js not found at $ECOSYSTEM_FILE"
-    exit 1
+    if [ -f "$ECOSYSTEM_EXAMPLE" ]; then
+        echo "Creating ecosystem.config.js from template..."
+        cp "$ECOSYSTEM_EXAMPLE" "$ECOSYSTEM_FILE"
+    else
+        echo "Error: No ecosystem config template found at $ECOSYSTEM_EXAMPLE"
+        exit 1
+    fi
 fi
-echo "✓ Ecosystem config found"
-echo "  (Using dynamic path resolution via path.resolve)"
+echo "✓ Ecosystem config ready"
 echo ""
 
 # 5. Interactive configuration
