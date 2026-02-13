@@ -20,8 +20,11 @@ def score_entry(
     """
     raw_total = 0.0
     
-    for pool_id, details in position.items():
-        weight = settings.pool_weights.get(pool_id, 1.0)
+    for pos_key, details in position.items():
+        # Use stored pool_id for weight lookup (supports per-position scoring
+        # where pos_key may be "pool_id#index" rather than bare pool_id)
+        actual_pool_id = details.get("pool_id", pos_key)
+        weight = settings.pool_weights.get(actual_pool_id, 1.0)
         amount_raw = details.get("amount", 0)
         decimals = max(0, settings.token_decimals)
         scale = float(10**decimals) if decimals else 1.0
@@ -34,7 +37,7 @@ def score_entry(
             boost = min(lock_days, settings.max_lock_days) / settings.max_lock_days
         raw_contrib = weight * amount_tokens * boost
         bt.logging.debug(
-            f"[SCORE CALC] pool={pool_id[:20]}...: "
+            f"[SCORE CALC] pool={actual_pool_id[:20]}...: "
             f"pool_weight={weight:.4f} × amount={amount_tokens:.2f} USDC × "
             f"boost={boost:.4f} (lock_days={lock_days}/{settings.max_lock_days}) = "
             f"raw_contrib={raw_contrib:.6f}"

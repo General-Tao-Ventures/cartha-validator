@@ -61,6 +61,26 @@ def test_score_entry_applies_weight_and_boost() -> None:
     assert pytest.approx(score, rel=1e-6) == expected
 
 
+def test_score_entry_per_position_no_combine() -> None:
+    """Test that per-position scoring uses individual lock_days, not max."""
+    settings = DEFAULT_SETTINGS.model_copy(update={
+        "pool_weights": {"poolA": 1.0},
+        "max_lock_days": 365,
+    })
+    unit = 10 ** settings.token_decimals
+    # Two positions in same pool with different lock days
+    entry = {
+        "poolA#0": {"amount": 10000 * unit, "lockDays": 7, "pool_id": "poolA"},
+        "poolA#1": {"amount": 100 * unit, "lockDays": 365, "pool_id": "poolA"},
+    }
+    score = score_entry(entry, settings=settings)
+    # Each position scored individually: 10000*(7/365) + 100*(365/365)
+    expected = 10000 * (7 / 365) + 100 * (365 / 365)
+    assert pytest.approx(score, rel=1e-6) == expected
+    # This should NOT be 10100 * 1.0 (the old buggy max(lockDays) behavior)
+    assert score < 10100 * 0.5  # Much less than if all got boost=1.0
+
+
 def test_score_entry_clamps_lock_days() -> None:
     settings = DEFAULT_SETTINGS.model_copy(update={"max_lock_days": 90})
     unit = 10 ** settings.token_decimals
