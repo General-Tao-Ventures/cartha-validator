@@ -56,12 +56,20 @@ def resolve_block(entry: Mapping[str, Any]) -> int | None:
 def format_positions(
     positions: Mapping[str, Mapping[str, int]], unit: float
 ) -> dict[str, dict[str, Any]]:
-    """Format position data for display."""
+    """Format position data for display.
+    
+    Supports per-position keys (e.g. "pool_id#0") by reading the actual
+    pool_id from the position data when available.
+    """
     formatted: dict[str, dict[str, Any]] = {}
-    for pool_id, data in positions.items():
+    for pos_key, data in positions.items():
+        # Use stored pool_id if available (per-position scoring),
+        # otherwise fall back to the dict key (legacy combined format)
+        actual_pool_id = data.get("pool_id", pos_key)
         amount_raw = int(data.get("amount", 0))
         amount_usdc = amount_raw / unit
-        formatted[pool_id] = {
+        formatted[pos_key] = {
+            "pool_id": actual_pool_id,
             "amountRaw": amount_raw,
             "amountUSDC": f"{amount_usdc:,.6f} USDC",
             "lockDays": int(data.get("lockDays", 0)),
@@ -265,11 +273,14 @@ def process_entries(
 
                 amount = int(entry.get("amount", 0))
                 lock_days = int(entry.get("lock_days", 0))
-                existing = combined_positions.setdefault(
-                    pool_id, {"amount": 0, "lockDays": 0}
-                )
-                existing["amount"] += amount
-                existing["lockDays"] = max(existing["lockDays"], lock_days)
+                # Score each position individually (don't combine by pool_id)
+                # Each position keeps its own lock_days for accurate boost calculation
+                pos_key = f"{pool_id}#{len(combined_positions)}"
+                combined_positions[pos_key] = {
+                    "amount": amount,
+                    "lockDays": lock_days,
+                    "pool_id": pool_id,
+                }
                 continue
 
             # Note: chain_id, vault, and owner are no longer exposed in API
@@ -397,13 +408,13 @@ def process_entries(
                 bt.logging.debug("Failed to compute RPC lag for chain %s", chain_id)
 
             for pool_id, data in positions.items():
-                existing = combined_positions.setdefault(
-                    pool_id, {"amount": 0, "lockDays": 0}
-                )
-                existing["amount"] += int(data.get("amount", 0))
-                existing["lockDays"] = max(
-                    existing["lockDays"], int(data.get("lockDays", 0))
-                )
+                # Score each position individually (don't combine by pool_id)
+                pos_key = f"{pool_id}#{len(combined_positions)}"
+                combined_positions[pos_key] = {
+                    "amount": int(data.get("amount", 0)),
+                    "lockDays": int(data.get("lockDays", 0)),
+                    "pool_id": pool_id,
+                }
 
         if not combined_positions:
             if miner_failed:

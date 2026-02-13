@@ -1,7 +1,7 @@
 """Validator tooling for Cartha."""
 
 # Version must match pyproject.toml - update both when releasing
-__version__ = "1.1.3"
+__version__ = "1.1.4"
 
 # Convert version string (e.g., "1.0.0") to spec_version integer (e.g., 1000)
 # Format: 1000 * major + 10 * minor + 1 * patch
