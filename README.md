@@ -66,19 +66,46 @@ The validator operates on a **weekly epoch cycle** (Friday 00:00 UTC → Thursda
 
 ## Scoring Algorithm
 
-The validator uses a direct scoring system that preserves competitive differences:
+The validator uses a transparent, per-position scoring system that preserves competitive differences between miners.
 
-- **Raw Score Calculation:**
-  ```
-  raw = poolWeight * amount * min(lockDays, maxLockDays) / maxLockDays
-  ```
+### Position Score Formula
 
-- **Normalized Weights:**
-  ```
-  weight = raw / sum(all_raw_scores)
-  ```
+Each individual liquidity position is scored as:
 
-Scores are used directly without exponential normalization, ensuring that differences in liquidity positions translate proportionally to weight distribution.
+```
+position_score = pool_weight × amount_usdc × lock_boost
+
+where:
+  amount_usdc = original_amount_usdc  (frozen at epoch start — mid-epoch top-ups don't count)
+  lock_boost  = min(lock_days, max_lock_days) / max_lock_days
+  max_lock_days = 365 (configurable)
+  pool_weight = 1.0 for all pools (pre-DEX equal-weight mode)
+```
+
+### Miner Score (Sum of All Positions)
+
+A miner's total score is the **sum of all their active position scores**. Positions are evaluated individually — not collapsed by pool — so every position with a distinct lock duration contributes its own unique boost:
+
+```
+miner_score = Σ position_score_i   (for all non-expired, non-deregistered positions)
+```
+
+A principal miner below 100,000 USDC total across their entire vault receives `score = 0.0` regardless of lock duration. This also means all federated miners in that vault earn no ALPHA rewards for that epoch.
+
+### Weight Normalization
+
+```
+remaining_weight = 1.0 - trader_pool_weight     # = 0.756098 (75.6098%)
+weight(miner_i)  = (score_i / Σ score_j) × remaining_weight
+
+Fixed allocations:
+  Incentive Pool:      24.3902% (always — airdrops, trader rewards, ecosystem incentives)
+  Subnet owner hotkey: 75.6098% (only when no miners qualify — emission burning)
+```
+
+### Federated Miner Impact
+
+Every federated miner who locks USDC into a principal miner's vault contributes an independent position that adds directly to the principal's aggregate score. A federated miner locking for 365 days contributes **twice** the score of one locking for 182 days at the same amount. This design makes the system robust and fair — every individual position matters, and longer commitments are proportionally rewarded.
 
 ## Documentation
 

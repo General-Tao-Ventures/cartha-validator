@@ -30,7 +30,7 @@ DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 # Trader Rewards Pool Configuration
 TRADER_REWARDS_POOL_HOTKEY = "5EPdZMZyByHbweNBWRFwYqL5czKGbdeVKTpHqVizp4UyUq94"
 TRADER_REWARDS_POOL_WEIGHT = 0.243902  # 24.3902% fixed allocation
-TRADER_REWARDS_POOL_NAME = "Cartha's Trader Rewards Pool"
+TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
 
 # Daily Emissions Configuration
 DAILY_ALPHA_EMISSIONS = 2952.0  # Total alpha emissions per day across all miners
