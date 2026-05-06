@@ -107,6 +107,22 @@ def test_augment_falls_back_when_parent_has_no_children_in_input() -> None:
         assert augmented[parent_addr] == 1.0
 
 
+def test_augment_with_sparse_input_defaults_unknown_children_to_one() -> None:
+    """Regression guard for Cursor Bugbot finding (mirror of cartha-principal-
+    miner PR #1): when only some of a parent's children appear in the input
+    weights dict, the missing ones must default to 1.0 in the average — NOT
+    be filtered out so the divisor shrinks. e.g. ``{BTC: 0.5}`` on the 3-child
+    Crypto parent must yield ``(0.5 + 1.0 + 1.0) / 3``, not ``0.5``.
+    """
+    augmented = _augment_with_parent_weights({BTC_POOL: 0.5})
+    assert augmented[CRYPTO_PARENT] == pytest.approx((0.5 + 1.0 + 1.0) / 3)
+    assert augmented[CRYPTO_PARENT] != pytest.approx(0.5)
+    # Currencies and Commodities have NO children in the input — fall back to
+    # the all-children-default-to-1.0 path → mean = 1.0.
+    assert augmented[CURRENCIES_PARENT] == pytest.approx(1.0)
+    assert augmented[COMMODITIES_PARENT] == pytest.approx(1.0)
+
+
 def test_augment_does_not_mutate_input() -> None:
     child_weights = {BTC_POOL: 1.0}
     _augment_with_parent_weights(child_weights)

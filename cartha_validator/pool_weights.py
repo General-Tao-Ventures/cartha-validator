@@ -102,16 +102,15 @@ def _augment_with_parent_weights(child_weights: dict[str, float]) -> dict[str, f
 
     For each parent vault we add an entry keyed by the lowercased parent
     address whose value is the **arithmetic mean** of that parent's children
-    weights. Parents whose children are all unknown (or absent from the input
-    map) fall back to 1.0 so they still score under PRE-DEX mode.
+    weights. Children missing from ``child_weights`` fall back to 1.0 so the
+    average always covers every child — filtering to only "present" entries
+    undercounts and breaks per-dollar parity (e.g. ``{BTC: 0.5}`` on a
+    3-child parent must yield ``(0.5 + 1.0 + 1.0) / 3``, not ``0.5``).
     """
     augmented: dict[str, float] = dict(child_weights)
     for parent_address, child_pool_ids in PARENT_VAULT_TO_CHILD_POOLS.items():
-        present = [child_weights[c] for c in child_pool_ids if c in child_weights]
-        if present:
-            augmented[parent_address] = sum(present) / len(present)
-        else:
-            augmented[parent_address] = 1.0
+        weights = [child_weights.get(c, 1.0) for c in child_pool_ids]
+        augmented[parent_address] = sum(weights) / len(weights)
     return augmented
 
 
