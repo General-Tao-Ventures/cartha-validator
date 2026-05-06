@@ -73,6 +73,10 @@ def format_positions(
             "amountRaw": amount_raw,
             "amountUSDC": f"{amount_usdc:,.6f} USDC",
             "lockDays": int(data.get("lockDays", 0)),
+            # 'child' (default) or 'parent' — surfaced so leaderboard consumers
+            # can render a "Cryptos / Currencies / Commodities" badge for
+            # parent-vault category locks vs. cv* leaf-pool locks.
+            "vaultType": data.get("vault_type", "child"),
         }
     return formatted
 
@@ -280,6 +284,12 @@ def process_entries(
                     "amount": amount,
                     "lockDays": lock_days,
                     "pool_id": pool_id,
+                    # 'child' (default) or 'parent' — verifier sets this for
+                    # parent-vault category locks. Used by format_positions to
+                    # surface a category badge on the leaderboard, and ignored
+                    # by the scoring math (the parent's weight is already
+                    # baked into pool_weights as the avg of its children).
+                    "vault_type": entry.get("vault_type", "child"),
                 }
                 continue
 
