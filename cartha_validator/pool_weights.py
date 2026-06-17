@@ -62,6 +62,58 @@ PRE_DEX_EQUAL_WEIGHTS = True
 ALL_KNOWN_POOLS = list(POOL_ID_TO_VAULT.keys())
 
 
+# ── Parent-vault scoring identifiers ─────────────────────────────────────────
+# When an LP locks via the new parent-vault path (Cryptos / Currencies /
+# Commodities), the verifier writes a single `verified_miners` row with
+# `pool_id = <parent_vault_address_lowercased>` and `vault_type='parent'`.
+# Scoring needs a weight for that synthetic pool_id.
+#
+# RULE: parent weight = AVERAGE of its children's weights (NOT sum).
+# Each parent's on-chain children weights sum to ~100% within that parent —
+# summing across them inflates parent locks vs. single-pool locks of the
+# same USDC. Averaging keeps per-dollar parity.
+#
+# Keys are lowercased addresses to match what the verifier records on the
+# `verified_miners.pool_id` column.
+
+PARENT_VAULT_TO_CHILD_POOLS: dict[str, list[str]] = {
+    "0x7c5fac6a0295663686873e418406cf540c45ccf3": [  # Cryptos
+        "0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489",  # BTC/USD
+        "0x0b43555ace6b39aae1b894097d0a9fc17f504c62fea598fa206cc6f5088e6e45",  # ETH/USD
+        "0x92672906cbedad5b67ba80d7e4361725ef6b8fa45eb9dd04b335529420e01a7f",  # TAO/USD
+    ],
+    "0xf69eedf403c9db553e1d1dcc29b31d0c3e7c58f3": [  # Currencies
+        "0xa9226449042e36bf6865099eec57482aa55e3ad026c315a0e4a692b776c318ca",  # EUR/USD
+        "0xfd121bde813a3463e16ad2a4ea4103a6a122fbe2cdb07a80d4d293be07bb29fa",  # GBP/USD
+        "0xf9e627ddbdb060c1c9126daeb9addcd1d1ce7d49dbb540e2677f1c572bc8d195",  # JPY/USD
+    ],
+    "0xa265777b6241143c752d37025bb4de4b3e311a19": [  # Commodities
+        "0x5656b83664973a9b4e2c18d45b7578e6746ee4a565da62e3ac579fb9e05acc55",  # GOLD/USD
+        "0x3b66bf6918c0338548861fe0d3e82a1251710d12aa866a34d4bfc0a9b6a5d73c",  # SILVER/USD
+    ],
+}
+
+# Lowercased identifiers used as keys in the scoring weights dict.
+ALL_KNOWN_PARENT_VAULTS: list[str] = list(PARENT_VAULT_TO_CHILD_POOLS.keys())
+
+
+def _augment_with_parent_weights(child_weights: dict[str, float]) -> dict[str, float]:
+    """Return ``child_weights`` extended with synthetic parent-vault entries.
+
+    For each parent vault we add an entry keyed by the lowercased parent
+    address whose value is the **arithmetic mean** of that parent's children
+    weights. Children missing from ``child_weights`` fall back to 1.0 so the
+    average always covers every child — filtering to only "present" entries
+    undercounts and breaks per-dollar parity (e.g. ``{BTC: 0.5}`` on a
+    3-child parent must yield ``(0.5 + 1.0 + 1.0) / 3``, not ``0.5``).
+    """
+    augmented: dict[str, float] = dict(child_weights)
+    for parent_address, child_pool_ids in PARENT_VAULT_TO_CHILD_POOLS.items():
+        weights = [child_weights.get(c, 1.0) for c in child_pool_ids]
+        augmented[parent_address] = sum(weights) / len(weights)
+    return augmented
+
+
 def _load_cache() -> dict[str, Any] | None:
     """Load cached pool weights from disk.
     
@@ -375,14 +427,20 @@ def get_pool_weights_for_scoring(
     # ==========================================================================
     if PRE_DEX_EQUAL_WEIGHTS:
         # Return 1.0 for each known pool (equal weight)
-        # The scoring formula multiplies by this weight, so equal weights = equal treatment
+        # The scoring formula multiplies by this weight, so equal weights = equal treatment.
+        # Parent-vault synthetic identifiers are added with the same averaging
+        # rule used in POST-DEX mode — in PRE-DEX every child is 1.0, so the
+        # arithmetic mean is also 1.0 (parent locks score the same per-dollar
+        # as a single-child lock).
         equal_weights = {pool_id: 1.0 for pool_id in ALL_KNOWN_POOLS}
-        
+        equal_weights = _augment_with_parent_weights(equal_weights)
+
         bt.logging.info(
-            f"[POOL WEIGHTS] PRE-DEX MODE: Using equal weights for all {len(equal_weights)} pools "
+            f"[POOL WEIGHTS] PRE-DEX MODE: Using equal weights for "
+            f"{len(ALL_KNOWN_POOLS)} child pools + {len(ALL_KNOWN_PARENT_VAULTS)} parent vaults "
             f"(each pool weight = 1.0)"
         )
-        
+
         return equal_weights
     
     # ==========================================================================
@@ -489,5 +547,5 @@ def get_pool_weights_for_scoring(
     # Fallback for POST-DEX mode if the above code is uncommented but fails
     # This should not be reached in PRE-DEX mode
     bt.logging.warning("[POOL WEIGHTS] POST-DEX mode but on-chain query code is commented out, using equal weights")
-    return {pool_id: 1.0 for pool_id in ALL_KNOWN_POOLS}
+    return _augment_with_parent_weights({pool_id: 1.0 for pool_id in ALL_KNOWN_POOLS})
 
