@@ -28,7 +28,13 @@ DEFAULT_PARENT_VAULT_ADDRESS = "0x7c5fAc6A0295663686873E418406cf540c45CCF3"  # C
 DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 
 # Trader Rewards Pool Configuration
-TRADER_REWARDS_POOL_HOTKEY = "5EPdZMZyByHbweNBWRFwYqL5czKGbdeVKTpHqVizp4UyUq94"
+# Receiving hotkey for Cartha's Incentive Pool fixed allocation. Overridable via
+# the TRADER_REWARDS_POOL_HOTKEY env var so the recipient can change without a
+# code release.
+TRADER_REWARDS_POOL_HOTKEY = os.environ.get(
+    "TRADER_REWARDS_POOL_HOTKEY",
+    "5EsZn96Zsp52JEHdoVN9D2mZ99DwTbiS2pHEDZUEZsey3tDj",
+)
 TRADER_REWARDS_POOL_WEIGHT = 0.243902  # 24.3902% fixed allocation
 TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
 
