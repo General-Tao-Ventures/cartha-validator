@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cartha-subnet-validator"
-version = "1.1.4"
+version = "1.1.5"
 description = "Cartha subnet validator reference implementation."
 requires-python = ">=3.11,<3.12"
 authors = [
@@ -13,6 +13,12 @@ authors = [
 readme = "README.md"
 dependencies = [
   "bittensor>=9.12.2,<10",
+  # Pin below 2.0 to stay on the scalecodec line that matches bittensor's
+  # pinned scalecodec==1.2.12. async-substrate-interface>=2.0 switched to
+  # cyscale (same namespace as scalecodec); >=2.2.0 hard-errors at import when
+  # both are installed, breaking `uv sync` (lockfile is gitignored). See the
+  # cyscale/scalecodec conflict guard in async_substrate_interface.
+  "async-substrate-interface>=1.5.6,<2",
   "web3>=6.11,<7",
   "eth-account>=0.10,<0.11",
   "hexbytes>=0.3.0",
