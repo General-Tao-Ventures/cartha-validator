@@ -443,7 +443,7 @@ HOTKEY_SS58=$($PYTHON_CMD << EOF 2>/dev/null
 import sys
 try:
     import bittensor as bt
-    wallet = bt.wallet(name="$WALLET_NAME", hotkey="$WALLET_HOTKEY")
+    wallet = bt.Wallet(name="$WALLET_NAME", hotkey="$WALLET_HOTKEY")
     print(wallet.hotkey.ss58_address)
 except Exception:
     sys.exit(0)  # Silent failure, non-fatal
