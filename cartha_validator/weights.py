@@ -220,7 +220,7 @@ def publish(
         force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
     """
     # Initialize subtensor early to resolve trader pool UID
-    subtensor = subtensor or bt.subtensor()
+    subtensor = subtensor or bt.Subtensor()
     
     # Resolve trader rewards pool UID from hotkey
     trader_pool_uid: int | None = None
@@ -335,7 +335,7 @@ def publish(
                 f"UID {uid}: score={score_val:.6f} → normalized_weight={weight_val:.6f}"
             )
     
-    wallet = wallet or bt.wallet()
+    wallet = wallet or bt.Wallet()
 
     # Check if enough blocks have passed since last weight update (if metagraph available)
     # Skip this check if force=True (e.g., on validator startup)

@@ -12,8 +12,8 @@ def ensure_registered(
     bt.logging.info(
         "Ensuring registration for wallet=%s hotkey=%s netuid=%s", wallet_name, hotkey_name, netuid
     )
-    subtensor = bt.subtensor(network=network)
-    wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
+    subtensor = bt.Subtensor(network=network)
+    wallet = bt.Wallet(name=wallet_name, hotkey=hotkey_name)
     hotkey = wallet.hotkey.ss58_address
 
     if not subtensor.is_hotkey_registered(hotkey, netuid):
