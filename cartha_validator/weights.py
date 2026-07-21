@@ -140,14 +140,19 @@ class SetWeightsTimeoutError(Exception):
     pass
 
 
-def _coerce_set_weights_result(result: Any) -> tuple[bool, str]:
-    """Normalize set_weights return value to (success, message).
+def _coerce_extrinsic_result(result: Any) -> tuple[bool, str]:
+    """Normalize extrinsic return value to (success, message).
 
-    Bittensor >=10.5 returns ExtrinsicResponse (tuple-like over success/message).
-    Older SDKs and our tests may still return a plain (bool, str) tuple.
+    Bittensor >=10.5 returns ExtrinsicResponse. Do not use truthiness of the
+    object itself — ``bool(ExtrinsicResponse(success=False))`` is True.
+    Older SDKs / tests may still return a plain (bool, str) tuple.
     """
     if result is None:
-        return False, "set_weights returned no result"
+        return False, "extrinsic returned no result"
+
+    # Legacy SDKs / stubs may return a bare bool
+    if isinstance(result, bool):
+        return result, ""
 
     success = getattr(result, "success", None)
     message = getattr(result, "message", None)
@@ -162,7 +167,11 @@ def _coerce_set_weights_result(result: Any) -> tuple[bool, str]:
         success, message = result  # type: ignore[misc]
         return bool(success), "" if message is None else str(message)
     except (TypeError, ValueError):
-        return False, f"Unexpected set_weights result type: {type(result).__name__}"
+        return False, f"Unexpected extrinsic result type: {type(result).__name__}"
+
+
+# Backwards-compatible alias used by earlier call sites / tests.
+_coerce_set_weights_result = _coerce_extrinsic_result
 
 
 def _set_weights_with_timeout(
@@ -219,7 +228,7 @@ def _set_weights_with_timeout(
     if exception[0]:
         raise exception[0]
     
-    return _coerce_set_weights_result(result[0])
+    return _coerce_extrinsic_result(result[0])
 
 
 def publish(

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import bittensor as bt
 
+from .weights import _coerce_extrinsic_result
+
 
 def ensure_registered(
     wallet_name: str, hotkey_name: str, netuid: int, network: str = "finney"
@@ -18,10 +20,15 @@ def ensure_registered(
 
     if not subtensor.is_hotkey_registered(hotkey, netuid):
         bt.logging.warning("Hotkey not registered; performing registration")
-        ok = subtensor.register(wallet=wallet, netuid=netuid, wait_for_finalization=True, cuda=True)
-        if not ok:
-            bt.logging.error("Registration failed for hotkey %s", hotkey)
-            raise RuntimeError("Registration failed")
+        response = subtensor.register(
+            wallet=wallet, netuid=netuid, wait_for_finalization=True, cuda=True
+        )
+        success, message = _coerce_extrinsic_result(response)
+        if not success:
+            bt.logging.error(
+                "Registration failed for hotkey %s: %s", hotkey, message or "unknown error"
+            )
+            raise RuntimeError(f"Registration failed: {message or 'unknown error'}")
 
     neuron = subtensor.get_neuron_for_pubkey_and_subnet(hotkey, netuid)
     bt.logging.info("Registration complete uid=%s", neuron.uid)
