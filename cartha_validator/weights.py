@@ -140,6 +140,40 @@ class SetWeightsTimeoutError(Exception):
     pass
 
 
+def _coerce_extrinsic_result(result: Any) -> tuple[bool, str]:
+    """Normalize extrinsic return value to (success, message).
+
+    Bittensor >=10.5 returns ExtrinsicResponse. Do not use truthiness of the
+    object itself — ``bool(ExtrinsicResponse(success=False))`` is True.
+    Older SDKs / tests may still return a plain (bool, str) tuple.
+    """
+    if result is None:
+        return False, "extrinsic returned no result"
+
+    # Legacy SDKs / stubs may return a bare bool
+    if isinstance(result, bool):
+        return result, ""
+
+    success = getattr(result, "success", None)
+    message = getattr(result, "message", None)
+    if isinstance(success, bool):
+        return success, "" if message is None else str(message)
+
+    if isinstance(result, tuple) and len(result) >= 2:
+        return bool(result[0]), "" if result[1] is None else str(result[1])
+
+    # ExtrinsicResponse also supports iteration/indexing as (success, message)
+    try:
+        success, message = result  # type: ignore[misc]
+        return bool(success), "" if message is None else str(message)
+    except (TypeError, ValueError):
+        return False, f"Unexpected extrinsic result type: {type(result).__name__}"
+
+
+# Backwards-compatible alias used by earlier call sites / tests.
+_coerce_set_weights_result = _coerce_extrinsic_result
+
+
 def _set_weights_with_timeout(
     subtensor: Any,
     wallet: Any,
@@ -194,7 +228,7 @@ def _set_weights_with_timeout(
     if exception[0]:
         raise exception[0]
     
-    return result[0]
+    return _coerce_extrinsic_result(result[0])
 
 
 def publish(
@@ -220,7 +254,7 @@ def publish(
         force: If True, bypass cooldown check and always attempt to set weights (e.g., on startup)
     """
     # Initialize subtensor early to resolve trader pool UID
-    subtensor = subtensor or bt.subtensor()
+    subtensor = subtensor or bt.Subtensor()
     
     # Resolve trader rewards pool UID from hotkey
     trader_pool_uid: int | None = None
@@ -335,7 +369,7 @@ def publish(
                 f"UID {uid}: score={score_val:.6f} → normalized_weight={weight_val:.6f}"
             )
     
-    wallet = wallet or bt.wallet()
+    wallet = wallet or bt.Wallet()
 
     # Check if enough blocks have passed since last weight update (if metagraph available)
     # Skip this check if force=True (e.g., on validator startup)

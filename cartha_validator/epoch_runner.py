@@ -122,7 +122,7 @@ def run_epoch(
         validator_hotkey = wallet.hotkey.ss58_address
     else:
         # Create default wallet as fallback
-        wallet = bt.wallet()
+        wallet = bt.Wallet()
         validator_hotkey = wallet.hotkey.ss58_address
     
     # Detect if we're on testnet (for demo mode detection)
@@ -322,9 +322,9 @@ def run_epoch(
             )
 
     if subtensor is None:
-        subtensor = bt.subtensor()
+        subtensor = bt.Subtensor()
     if wallet is None:
-        wallet = bt.wallet()
+        wallet = bt.Wallet()
 
     # Query pool weights from parent vault contract before scoring
     bt.logging.info(

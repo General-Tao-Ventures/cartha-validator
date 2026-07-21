@@ -61,7 +61,7 @@ def get_subnet_weights_version(network: str = "finney", netuid: int = 35) -> int
     """
     try:
         # Connect to Bittensor network
-        subtensor = bt.subtensor(network=network)
+        subtensor = bt.Subtensor(network=network)
         
         # Method 1: Try metagraph.hparams (most reliable - confirmed working)
         try:

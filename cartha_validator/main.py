@@ -72,11 +72,11 @@ def main() -> None:
     subtensor_network = getattr(config.subtensor, "network", None)
     subtensor_endpoint = getattr(config.subtensor, "chain_endpoint", None)
     if subtensor_endpoint:
-        subtensor = bt.subtensor(network=subtensor_endpoint)
+        subtensor = bt.Subtensor(network=subtensor_endpoint)
     elif subtensor_network:
-        subtensor = bt.subtensor(network=subtensor_network)
+        subtensor = bt.Subtensor(network=subtensor_network)
     else:
-        subtensor = bt.subtensor()
+        subtensor = bt.Subtensor()
     bt.logging.info(f"Subtensor: {subtensor}")
 
     # Create and sync metagraph (like template does)
@@ -145,7 +145,7 @@ def main() -> None:
             
             if args.wallet_hotkey:
                 # Hotkey name explicitly provided - load it directly
-                wallet = bt.wallet(
+                wallet = bt.Wallet(
                     name=config.wallet.name,
                     hotkey=config.wallet.hotkey,
                     path=config.wallet.path,
@@ -173,7 +173,7 @@ def main() -> None:
                     if hotkey_file.is_file():
                         try:
                             # Try to load this hotkey and check its SS58
-                            test_wallet = bt.wallet(
+                            test_wallet = bt.Wallet(
                                 name=config.wallet.name,
                                 hotkey=hotkey_file.name,
                                 path=str(config.wallet.path),
@@ -232,7 +232,7 @@ def main() -> None:
                 "Must provide --wallet-name or --hotkey-ss58"
             )
         
-        wallet = bt.wallet(
+        wallet = bt.Wallet(
             name=config.wallet.name,
             hotkey=config.wallet.hotkey,
             path=config.wallet.path,

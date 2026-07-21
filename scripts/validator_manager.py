@@ -150,7 +150,7 @@ def resolve_validator_uid(
     try:
         if subtensor is None:
             # Create subtensor instance
-            subtensor = bt.subtensor()
+            subtensor = bt.Subtensor()
 
         # Try metagraph method first (more efficient)
         try:
