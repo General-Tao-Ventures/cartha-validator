@@ -14,8 +14,8 @@ if "bittensor" not in sys.modules:
     mock_bt.logging.info = MagicMock()
     mock_bt.logging.warning = MagicMock()
     mock_bt.logging.error = MagicMock()
-    mock_bt.subtensor = MagicMock()
-    mock_bt.wallet = MagicMock()
+    mock_bt.Subtensor = MagicMock()
+    mock_bt.Wallet = MagicMock()
     sys.modules["bittensor"] = mock_bt
 
 # Mock web3 if not already imported

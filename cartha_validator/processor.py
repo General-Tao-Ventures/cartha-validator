@@ -115,7 +115,7 @@ def process_entries(
     }
     unit = float(10**settings.token_decimals)
     web3_cache: dict[int, Web3] = {}
-    subtensor = subtensor or bt.subtensor()
+    subtensor = subtensor or bt.Subtensor()
 
     grouped: dict[int, dict[str, Any]] = {}
     sources: dict[int, list[Mapping[str, Any]]] = {}

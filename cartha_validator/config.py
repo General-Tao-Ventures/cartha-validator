@@ -268,8 +268,8 @@ def parse_args() -> argparse.Namespace:
         help=f"Leaderboard API URL for submitting rankings (default: {DEFAULT_LEADERBOARD_API_URL}). Can also be set via LEADERBOARD_API_URL env var. Use empty string to disable.",
     )
     # Add bittensor subtensor, wallet, and logging args (like template does)
-    bt.subtensor.add_args(parser)
-    bt.wallet.add_args(parser)
+    bt.Subtensor.add_args(parser)
+    bt.Wallet.add_args(parser)
     bt.logging.add_args(parser)
 
     # Parse args normally to get both our custom args and bt args
