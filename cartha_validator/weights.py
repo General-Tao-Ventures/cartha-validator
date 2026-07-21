@@ -140,6 +140,31 @@ class SetWeightsTimeoutError(Exception):
     pass
 
 
+def _coerce_set_weights_result(result: Any) -> tuple[bool, str]:
+    """Normalize set_weights return value to (success, message).
+
+    Bittensor >=10.5 returns ExtrinsicResponse (tuple-like over success/message).
+    Older SDKs and our tests may still return a plain (bool, str) tuple.
+    """
+    if result is None:
+        return False, "set_weights returned no result"
+
+    success = getattr(result, "success", None)
+    message = getattr(result, "message", None)
+    if isinstance(success, bool):
+        return success, "" if message is None else str(message)
+
+    if isinstance(result, tuple) and len(result) >= 2:
+        return bool(result[0]), "" if result[1] is None else str(result[1])
+
+    # ExtrinsicResponse also supports iteration/indexing as (success, message)
+    try:
+        success, message = result  # type: ignore[misc]
+        return bool(success), "" if message is None else str(message)
+    except (TypeError, ValueError):
+        return False, f"Unexpected set_weights result type: {type(result).__name__}"
+
+
 def _set_weights_with_timeout(
     subtensor: Any,
     wallet: Any,
@@ -194,7 +219,7 @@ def _set_weights_with_timeout(
     if exception[0]:
         raise exception[0]
     
-    return result[0]
+    return _coerce_set_weights_result(result[0])
 
 
 def publish(
