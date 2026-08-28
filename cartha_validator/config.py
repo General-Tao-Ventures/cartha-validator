@@ -31,11 +31,29 @@ DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 # Receiving hotkey for Cartha's Incentive Pool fixed allocation. Overridable via
 # the TRADER_REWARDS_POOL_HOTKEY env var so the recipient can change without a
 # code release.
+#
+# Weight is 0.0: miner emissions go entirely to scored miners. The allocation
+# path is still wired — set TRADER_REWARDS_POOL_WEIGHT to re-enable a fixed
+# slice without a code change. Must be >= 0 and < 1.
 TRADER_REWARDS_POOL_HOTKEY = os.environ.get(
     "TRADER_REWARDS_POOL_HOTKEY",
     "5EsZn96Zsp52JEHdoVN9D2mZ99DwTbiS2pHEDZUEZsey3tDj",
 )
-TRADER_REWARDS_POOL_WEIGHT = 0.243902  # 24.3902% fixed allocation
+
+
+def _trader_pool_weight_from_env() -> float:
+    """Parse TRADER_REWARDS_POOL_WEIGHT; invalid or out-of-range values disable the pool."""
+    raw = os.environ.get("TRADER_REWARDS_POOL_WEIGHT", "0.0")
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return 0.0
+    if value < 0 or value >= 1:
+        return 0.0
+    return value
+
+
+TRADER_REWARDS_POOL_WEIGHT = _trader_pool_weight_from_env()
 TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
 
 # Daily Emissions Configuration
@@ -129,7 +147,7 @@ class ValidatorSettings(BaseModel):
     )
     trader_rewards_pool_weight: float = Field(
         default=TRADER_REWARDS_POOL_WEIGHT,
-        description="Fixed weight allocation for trader rewards pool (default: 0.243902 = 24.3902%)",
+        description="Fixed weight allocation for trader rewards pool (default: 0.0 = disabled; all miner emissions go to scored miners)",
     )
     trader_rewards_pool_name: str = Field(
         default=TRADER_REWARDS_POOL_NAME,

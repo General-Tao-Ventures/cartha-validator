@@ -38,7 +38,7 @@ def _normalize(
     Args:
         scores: Mapping of UID to score
         trader_pool_uid: Optional UID of trader rewards pool (receives fixed weight)
-        trader_pool_weight: Fixed weight for trader pool (e.g., 0.243902 for 24.3902%)
+        trader_pool_weight: Fixed weight for trader pool (0.0 = disabled; all remaining weight goes to miners)
         owner_hotkey_uid: Optional UID of subnet owner hotkey (receives remaining weight when no miners)
     
     Returns:
@@ -109,7 +109,7 @@ def _normalize(
             weights = {}
     else:
         # Normalize miners with positive scores to fill remaining weight
-        # (e.g., 75.6098% when trader pool takes 24.3902%)
+        # (1.0 when the trader pool is disabled)
         weights = {
             uid: (score / miner_total) * remaining_weight
             for uid, score in positive_miner_scores.items()

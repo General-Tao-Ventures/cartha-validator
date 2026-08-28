@@ -72,7 +72,7 @@ Principal miners with a total vault balance below `100,000 USDC` (configurable v
 After all miners are scored:
 
 ```
-remaining_weight = 1.0 - trader_pool_weight          # = 0.756098
+remaining_weight = 1.0 - trader_pool_weight          # = 1.0 when disabled
 weight(miner_i) = (score_i / Σ score_j) × remaining_weight
 ```
 
@@ -82,9 +82,9 @@ Where `Σ score_j` sums only miners with `score > 0`.
 
 | Recipient | Allocation | Purpose |
 | --- | --- | --- |
-| Incentive Pool (`5EPdZM...`) | **24.3902%** fixed | Ecosystem incentives — airdrops, trader rewards, community programs |
-| Qualified miners | **75.6098%** proportional | Rewards liquidity providers |
-| Subnet owner hotkey | **75.6098%** (fallback) | Emission burning when no miners qualify |
+| Incentive Pool | **0%** (disabled) | Previously a 24.3902% airdrop slice; miner emissions now go entirely to scored miners. Re-enable with `TRADER_REWARDS_POOL_WEIGHT`. |
+| Qualified miners | **100%** proportional | Rewards liquidity providers |
+| Subnet owner hotkey | **100%** (fallback) | Emission burning when no miners qualify |
 
 If no miners meet the minimum threshold, the miner allocation is routed to the subnet owner hotkey for **emission burning** — reducing inflation rather than wasting it.
 
@@ -125,7 +125,7 @@ The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:5
 8. **Filter Deregistered Hotkeys** — All positions for deregistered hotkeys are excluded (score = 0)
 9. **Apply Minimum Threshold** — Miners with total locked USDC < 100,000 score 0
 10. **Score Miners** — `scoring.score_entry()` sums all position contributions per miner
-11. **Normalise Weights** — `weights._normalize()` allocates fixed trader pool weight and normalizes miners proportionally to fill the remainder
+11. **Normalise Weights** — `weights._normalize()` distributes 100% of miner incentive across scored miners (trader pool weight defaults to 0)
 12. **Cache Weights** — Weights are cached for the entire weekly epoch
 13. **Publish** — `weights.publish()` checks cooldown and calls `subtensor.set_weights()` every Bittensor epoch (tempo blocks) throughout the week
 14. **Submit Leaderboard** — After successful publication, full ranking is sent to the leaderboard API
@@ -240,8 +240,8 @@ The code for on-chain weight queries already exists in `pool_weights.py` but is 
 | `set_weights_timeout` | `90.0s` | Timeout for `set_weights` operation |
 | `poll_interval` | `300s` | Daemon polling interval (5 minutes) |
 | `log_dir` | `validator_logs` | JSON log output directory |
-| `trader_rewards_pool_hotkey` | `5EPdZM…` | Fixed trader pool hotkey |
-| `trader_rewards_pool_weight` | `0.243902` | Trader pool fixed weight (24.3902%) |
+| `trader_rewards_pool_hotkey` | `5EsZn96…` | Incentive pool hotkey (unused while weight is 0) |
+| `trader_rewards_pool_weight` | `0.0` | Trader pool fixed weight (disabled; all emissions to miners) |
 | `daily_alpha_emissions` | `2952.0` | Total ALPHA/day (display only) |
 | `min_total_assets_usdc` | `100,000.0` | Minimum USDC for any weight allocation |
 | `validator_whitelist` | `[]` (all) | Hotkeys allowed to query verifier |

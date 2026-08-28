@@ -216,6 +216,8 @@ You can set these environment variables to configure the validator:
 | `CARTHA_VERIFIER_URL` | Verifier endpoint URL | `https://api.cartha.finance` |
 | `LEADERBOARD_API_URL` | Leaderboard API endpoint URL | `https://cartha-leaderboard-api-193291340038.us-central1.run.app` |
 | `CARTHA_NETUID` | Subnet netuid | `35` |
+| `TRADER_REWARDS_POOL_WEIGHT` | Fixed incentive-pool weight (`0` = disabled, all miner emissions to scored miners) | `0.0` |
+| `TRADER_REWARDS_POOL_HOTKEY` | Incentive pool hotkey (unused while weight is `0`) | `5EsZn96…` |
 
 ## Common Workflows
 

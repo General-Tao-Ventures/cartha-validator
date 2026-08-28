@@ -96,6 +96,32 @@ def test_normalize_clamps_negative_scores() -> None:
     assert pytest.approx(weights[2]) == 1.0
 
 
+def test_normalize_disabled_trader_pool_gives_miners_full_weight() -> None:
+    weights = _normalize({1: 10.0, 2: 30.0}, trader_pool_uid=140, trader_pool_weight=0.0)
+    assert 140 not in weights
+    assert pytest.approx(sum(weights.values())) == 1.0
+    assert pytest.approx(weights[1]) == 0.25
+    assert pytest.approx(weights[2]) == 0.75
+
+
+def test_normalize_trader_pool_fixed_slice() -> None:
+    pool_weight = 0.243902
+    remaining = 1.0 - pool_weight
+    weights = _normalize(
+        {1: 10.0, 2: 30.0},
+        trader_pool_uid=140,
+        trader_pool_weight=pool_weight,
+    )
+    assert pytest.approx(weights[140]) == pool_weight
+    assert pytest.approx(weights[1]) == 0.25 * remaining
+    assert pytest.approx(weights[2]) == 0.75 * remaining
+    assert pytest.approx(sum(weights.values())) == 1.0
+
+
+def test_default_trader_pool_weight_is_disabled() -> None:
+    assert DEFAULT_SETTINGS.trader_rewards_pool_weight == 0.0
+
+
 def test_publish_normalizes_and_calls_subtensor() -> None:
     subtensor = DummySubtensor(version_key=98765)
     wallet = DummyWallet()
