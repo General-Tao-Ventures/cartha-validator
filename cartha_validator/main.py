@@ -8,7 +8,13 @@ from datetime import UTC, datetime, timedelta
 
 import bittensor as bt
 
-from .config import DEFAULT_SETTINGS, epoch_version, parse_args
+from .config import (
+    DEFAULT_SETTINGS,
+    epoch_version,
+    parse_args,
+    trader_pool_hotkey_from_env,
+    trader_pool_weight_from_env,
+)
 from .epoch import epoch_start
 from .epoch_runner import run_epoch
 from .logging import (
@@ -301,6 +307,9 @@ def main() -> None:
             "parent_vault_address": parent_vault_address,
             "parent_vault_rpc_url": parent_vault_rpc_url,
             "leaderboard_api_url": leaderboard_api_url,
+            # Read after load_env_file() in parse_args so .env overrides apply.
+            "trader_rewards_pool_weight": trader_pool_weight_from_env(),
+            "trader_rewards_pool_hotkey": trader_pool_hotkey_from_env(),
         },
     )
     

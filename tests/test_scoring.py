@@ -6,7 +6,12 @@ from typing import Any
 import bittensor as bt
 import pytest
 
-from cartha_validator.config import DEFAULT_SETTINGS
+from cartha_validator.config import (
+    DEFAULT_SETTINGS,
+    load_env_file,
+    trader_pool_hotkey_from_env,
+    trader_pool_weight_from_env,
+)
 from cartha_validator.scoring import score_entry
 from cartha_validator import __spec_version__
 from cartha_validator.weights import _normalize, publish
@@ -120,6 +125,40 @@ def test_normalize_trader_pool_fixed_slice() -> None:
 
 def test_default_trader_pool_weight_is_disabled() -> None:
     assert DEFAULT_SETTINGS.trader_rewards_pool_weight == 0.0
+
+
+def test_trader_pool_weight_from_env_parses_valid_slice(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRADER_REWARDS_POOL_WEIGHT", "0.243902")
+    assert trader_pool_weight_from_env() == pytest.approx(0.243902)
+
+
+@pytest.mark.parametrize("raw", ["-0.1", "1", "1.5", "not-a-float", ""])
+def test_trader_pool_weight_from_env_disables_invalid(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("TRADER_REWARDS_POOL_WEIGHT", raw)
+    assert trader_pool_weight_from_env() == 0.0
+
+
+def test_trader_pool_weight_from_env_reads_dotenv_after_load(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TRADER_REWARDS_POOL_WEIGHT", raising=False)
+    (tmp_path / ".env").write_text("TRADER_REWARDS_POOL_WEIGHT=0.243902\n")
+    load_env_file()
+    assert trader_pool_weight_from_env() == pytest.approx(0.243902)
+
+
+def test_trader_pool_hotkey_from_env_reads_dotenv_after_load(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TRADER_REWARDS_POOL_HOTKEY", raising=False)
+    hotkey = "5CtestHotkeyOverrideForTraderPoolAllocation000000"
+    (tmp_path / ".env").write_text(f"TRADER_REWARDS_POOL_HOTKEY={hotkey}\n")
+    load_env_file()
+    assert trader_pool_hotkey_from_env() == hotkey
 
 
 def test_publish_normalizes_and_calls_subtensor() -> None:

@@ -35,14 +35,27 @@ DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 # Weight is 0.0: miner emissions go entirely to scored miners. The allocation
 # path is still wired — set TRADER_REWARDS_POOL_WEIGHT to re-enable a fixed
 # slice without a code change. Must be >= 0 and < 1.
-TRADER_REWARDS_POOL_HOTKEY = os.environ.get(
-    "TRADER_REWARDS_POOL_HOTKEY",
-    "5EsZn96Zsp52JEHdoVN9D2mZ99DwTbiS2pHEDZUEZsey3tDj",
-)
+#
+# These constants are code defaults only. Env / .env is applied after
+# load_env_file() via trader_pool_*_from_env() when building live settings.
+TRADER_REWARDS_POOL_HOTKEY = "5EsZn96Zsp52JEHdoVN9D2mZ99DwTbiS2pHEDZUEZsey3tDj"
+TRADER_REWARDS_POOL_WEIGHT = 0.0
+TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
 
 
-def _trader_pool_weight_from_env() -> float:
-    """Parse TRADER_REWARDS_POOL_WEIGHT; invalid or out-of-range values disable the pool."""
+def trader_pool_hotkey_from_env() -> str:
+    """Read TRADER_REWARDS_POOL_HOTKEY after .env has been loaded."""
+    raw = os.environ.get("TRADER_REWARDS_POOL_HOTKEY", TRADER_REWARDS_POOL_HOTKEY)
+    if not raw or not raw.strip():
+        return TRADER_REWARDS_POOL_HOTKEY
+    return raw.strip()
+
+
+def trader_pool_weight_from_env() -> float:
+    """Parse TRADER_REWARDS_POOL_WEIGHT; invalid or out-of-range values disable the pool.
+
+    Call this after load_env_file() so a value in .env is visible.
+    """
     raw = os.environ.get("TRADER_REWARDS_POOL_WEIGHT", "0.0")
     try:
         value = float(raw)
@@ -52,9 +65,6 @@ def _trader_pool_weight_from_env() -> float:
         return 0.0
     return value
 
-
-TRADER_REWARDS_POOL_WEIGHT = _trader_pool_weight_from_env()
-TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
 
 # Daily Emissions Configuration
 DAILY_ALPHA_EMISSIONS = 2952.0  # Total alpha emissions per day across all miners
