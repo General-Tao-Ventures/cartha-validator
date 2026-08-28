@@ -174,6 +174,19 @@ def _coerce_extrinsic_result(result: Any) -> tuple[bool, str]:
 _coerce_set_weights_result = _coerce_extrinsic_result
 
 
+def _is_set_weights_cooldown(message: str | None) -> bool:
+    """True when set_weights failed because the chain is still in tempo cooldown."""
+    text = "" if message is None else str(message).strip().lower()
+    if not text:
+        # ExtrinsicResponse(success=False, message=None/"") — SDK logs the reason separately
+        return True
+    return (
+        "too soon" in text
+        or "cooldown" in text
+        or "no one successful attempt" in text
+    )
+
+
 def _set_weights_with_timeout(
     subtensor: Any,
     wallet: Any,
@@ -425,11 +438,14 @@ def publish(
         raise RuntimeError(f"set_weights failed with exception: {e}") from e
     
     if not success:
-        # Handle "too soon" error gracefully - this is expected during cooldown periods
-        if "too soon" in str(message).lower() or "cooldown" in str(message).lower():
+        # Handle "too soon" error gracefully - this is expected during cooldown periods.
+        # Bittensor 10.5 ExtrinsicResponse often has success=False and an empty
+        # message; the reason is only in SDK logs ("Perhaps it is too soon...").
+        if _is_set_weights_cooldown(message):
+            detail = message.strip() if str(message).strip() else "chain rejected set_weights (likely cooldown)"
             bt.logging.warning(
                 f"{ANSI_BOLD}{ANSI_YELLOW}{EMOJI_STOPWATCH} Cannot set weights yet{ANSI_RESET} "
-                f"{ANSI_DIM}(cooldown period){ANSI_RESET}: {message}. "
+                f"{ANSI_DIM}(cooldown period){ANSI_RESET}: {detail}. "
                 f"Will retry on next epoch."
             )
             # Return normalized weights even when skipping, so logging shows what would be published

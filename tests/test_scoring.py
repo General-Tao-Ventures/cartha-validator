@@ -225,6 +225,35 @@ def test_publish_raises_on_failure() -> None:
             force=False,
         )
 
+
+def test_publish_treats_empty_failure_message_as_cooldown() -> None:
+    class CooldownSubtensor(DummySubtensor):
+        def set_weights(self, *args, **kwargs):
+            return False, ""
+
+    weights = publish(
+        {0: 1.0},
+        epoch_version="2024-10-18T00:00:00Z",
+        subtensor=CooldownSubtensor(),
+        force=True,
+    )
+    assert weights[0] == 1.0
+
+
+def test_publish_treats_too_soon_message_as_cooldown() -> None:
+    class CooldownSubtensor(DummySubtensor):
+        def set_weights(self, *args, **kwargs):
+            return False, "No one successful attempt made. Perhaps it is too soon to set weights!"
+
+    weights = publish(
+        {1: 10.0, 2: 30.0},
+        epoch_version="2024-10-18T00:00:00Z",
+        subtensor=CooldownSubtensor(),
+        force=True,
+    )
+    assert pytest.approx(weights[1]) == 0.25
+    assert pytest.approx(weights[2]) == 0.75
+
 def test_publish_uses_spec_version() -> None:
     """Test that publish uses __spec_version__ as version_key."""
     subtensor = DummySubtensor()
