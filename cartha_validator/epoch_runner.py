@@ -414,8 +414,9 @@ def run_epoch(
     
     # Add trader rewards pool to ranking if it received weight but isn't in ranking
     # (happens when trader pool has no verified positions/score=0)
+    # Incentive pool is hard-disabled. Env, .env, and settings cannot re-enable it.
     trader_pool_hotkey = settings.trader_rewards_pool_hotkey
-    trader_pool_weight = settings.trader_rewards_pool_weight
+    trader_pool_weight = 0.0
     
     if trader_pool_hotkey and trader_pool_weight > 0:
         # Check if trader pool is already in ranking

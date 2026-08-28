@@ -95,11 +95,11 @@ A principal miner below 100,000 USDC total across their entire vault receives `s
 ### Weight Normalization
 
 ```
-remaining_weight = 1.0 - trader_pool_weight     # = 1.0 when the pool is disabled
+remaining_weight = 1.0 - trader_pool_weight     # = 1.0; pool weight is forced to 0
 weight(miner_i)  = (score_i / Σ score_j) × remaining_weight
 
 Fixed allocations:
-  Incentive Pool:      0% (disabled — all miner emissions go to scored miners)
+  Incentive Pool:      0% (forced — all miner emissions go to scored miners)
   Subnet owner hotkey: 100% (only when no miners qualify — emission burning)
 ```
 

@@ -256,9 +256,9 @@ def publish(
     # Initialize subtensor early to resolve trader pool UID
     subtensor = subtensor or bt.Subtensor()
     
-    # Resolve trader rewards pool UID from hotkey
+    # Incentive pool is hard-disabled. Env, .env, and settings cannot re-enable it.
     trader_pool_uid: int | None = None
-    trader_pool_weight = settings.trader_rewards_pool_weight
+    trader_pool_weight = 0.0
     trader_pool_hotkey = settings.trader_rewards_pool_hotkey
     
     if trader_pool_hotkey and trader_pool_weight > 0:

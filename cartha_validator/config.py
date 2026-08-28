@@ -10,7 +10,7 @@ from datetime import time
 from pathlib import Path
 
 import bittensor as bt
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 from .epoch import epoch_start
 
@@ -28,16 +28,8 @@ DEFAULT_PARENT_VAULT_ADDRESS = "0x7c5fAc6A0295663686873E418406cf540c45CCF3"  # C
 DEFAULT_BASE_MAINNET_RPC_URL = "https://mainnet.base.org"
 
 # Trader Rewards Pool Configuration
-# Receiving hotkey for Cartha's Incentive Pool fixed allocation. Overridable via
-# the TRADER_REWARDS_POOL_HOTKEY env var so the recipient can change without a
-# code release.
-#
-# Weight is 0.0: miner emissions go entirely to scored miners. The allocation
-# path is still wired — set TRADER_REWARDS_POOL_WEIGHT to re-enable a fixed
-# slice without a code change. Must be >= 0 and < 1.
-#
-# These constants are code defaults only. Env / .env is applied after
-# load_env_file() via trader_pool_*_from_env() when building live settings.
+# Weight is forced to 0.0: miner emissions go entirely to scored miners.
+# TRADER_REWARDS_POOL_WEIGHT in the process env or .env is ignored.
 TRADER_REWARDS_POOL_HOTKEY = "5EsZn96Zsp52JEHdoVN9D2mZ99DwTbiS2pHEDZUEZsey3tDj"
 TRADER_REWARDS_POOL_WEIGHT = 0.0
 TRADER_REWARDS_POOL_NAME = "Cartha's Incentive Pool"
@@ -49,21 +41,6 @@ def trader_pool_hotkey_from_env() -> str:
     if not raw or not raw.strip():
         return TRADER_REWARDS_POOL_HOTKEY
     return raw.strip()
-
-
-def trader_pool_weight_from_env() -> float:
-    """Parse TRADER_REWARDS_POOL_WEIGHT; invalid or out-of-range values disable the pool.
-
-    Call this after load_env_file() so a value in .env is visible.
-    """
-    raw = os.environ.get("TRADER_REWARDS_POOL_WEIGHT", "0.0")
-    try:
-        value = float(raw)
-    except (TypeError, ValueError):
-        return 0.0
-    if value < 0 or value >= 1:
-        return 0.0
-    return value
 
 
 # Daily Emissions Configuration
@@ -157,7 +134,7 @@ class ValidatorSettings(BaseModel):
     )
     trader_rewards_pool_weight: float = Field(
         default=TRADER_REWARDS_POOL_WEIGHT,
-        description="Fixed weight allocation for trader rewards pool (default: 0.0 = disabled; all miner emissions go to scored miners)",
+        description="Forced 0.0: incentive pool disabled; all miner emissions go to scored miners. Env/.env cannot override.",
     )
     trader_rewards_pool_name: str = Field(
         default=TRADER_REWARDS_POOL_NAME,
@@ -173,6 +150,12 @@ class ValidatorSettings(BaseModel):
         default=100_000.0,
         description="Minimum total assets in USDC required for a miner to receive weight. Miners below this threshold score 0.",
     )
+
+    @field_validator("trader_rewards_pool_weight", mode="before")
+    @classmethod
+    def _force_trader_pool_disabled(cls, _value: object) -> float:
+        """Incentive pool allocation is hard-disabled; env and callers cannot re-enable it."""
+        return 0.0
 
 
 DEFAULT_SETTINGS = ValidatorSettings(

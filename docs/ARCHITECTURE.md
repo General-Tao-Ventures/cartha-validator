@@ -82,7 +82,7 @@ Where `Σ score_j` sums only miners with `score > 0`.
 
 | Recipient | Allocation | Purpose |
 | --- | --- | --- |
-| Incentive Pool | **0%** (disabled) | Previously a 24.3902% airdrop slice; miner emissions now go entirely to scored miners. Re-enable with `TRADER_REWARDS_POOL_WEIGHT`. |
+| Incentive Pool | **0%** (forced) | Previously a 24.3902% airdrop slice. Hard-disabled — `.env` / `TRADER_REWARDS_POOL_WEIGHT` cannot re-enable it. |
 | Qualified miners | **100%** proportional | Rewards liquidity providers |
 | Subnet owner hotkey | **100%** (fallback) | Emission burning when no miners qualify |
 
@@ -125,7 +125,7 @@ The validator operates on a **weekly epoch** (Friday 00:00 UTC → Thursday 23:5
 8. **Filter Deregistered Hotkeys** — All positions for deregistered hotkeys are excluded (score = 0)
 9. **Apply Minimum Threshold** — Miners with total locked USDC < 100,000 score 0
 10. **Score Miners** — `scoring.score_entry()` sums all position contributions per miner
-11. **Normalise Weights** — `weights._normalize()` distributes 100% of miner incentive across scored miners (trader pool weight defaults to 0)
+11. **Normalise Weights** — `weights._normalize()` distributes 100% of miner incentive across scored miners (trader pool weight is forced to 0)
 12. **Cache Weights** — Weights are cached for the entire weekly epoch
 13. **Publish** — `weights.publish()` checks cooldown and calls `subtensor.set_weights()` every Bittensor epoch (tempo blocks) throughout the week
 14. **Submit Leaderboard** — After successful publication, full ranking is sent to the leaderboard API
@@ -241,7 +241,7 @@ The code for on-chain weight queries already exists in `pool_weights.py` but is 
 | `poll_interval` | `300s` | Daemon polling interval (5 minutes) |
 | `log_dir` | `validator_logs` | JSON log output directory |
 | `trader_rewards_pool_hotkey` | `5EsZn96…` | Incentive pool hotkey (unused while weight is 0) |
-| `trader_rewards_pool_weight` | `0.0` | Trader pool fixed weight (disabled; all emissions to miners) |
+| `trader_rewards_pool_weight` | `0.0` (forced) | Trader pool fixed weight; env cannot override |
 | `daily_alpha_emissions` | `2952.0` | Total ALPHA/day (display only) |
 | `min_total_assets_usdc` | `100,000.0` | Minimum USDC for any weight allocation |
 | `validator_whitelist` | `[]` (all) | Hotkeys allowed to query verifier |
