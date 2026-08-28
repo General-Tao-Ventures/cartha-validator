@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import bittensor as bt
 import pytest
 
-from cartha_validator.config import DEFAULT_SETTINGS
+from cartha_validator.config import (
+    DEFAULT_SETTINGS,
+    ValidatorSettings,
+    load_env_file,
+    trader_pool_hotkey_from_env,
+)
 from cartha_validator.scoring import score_entry
 from cartha_validator import __spec_version__
 from cartha_validator.weights import _normalize, publish
@@ -94,6 +100,85 @@ def test_normalize_clamps_negative_scores() -> None:
     weights = _normalize({1: -5, 2: 5})
     assert weights[1] == 0.0
     assert pytest.approx(weights[2]) == 1.0
+
+
+def test_normalize_disabled_trader_pool_gives_miners_full_weight() -> None:
+    weights = _normalize({1: 10.0, 2: 30.0}, trader_pool_uid=140, trader_pool_weight=0.0)
+    assert 140 not in weights
+    assert pytest.approx(sum(weights.values())) == 1.0
+    assert pytest.approx(weights[1]) == 0.25
+    assert pytest.approx(weights[2]) == 0.75
+
+
+def test_normalize_trader_pool_fixed_slice() -> None:
+    pool_weight = 0.243902
+    remaining = 1.0 - pool_weight
+    weights = _normalize(
+        {1: 10.0, 2: 30.0},
+        trader_pool_uid=140,
+        trader_pool_weight=pool_weight,
+    )
+    assert pytest.approx(weights[140]) == pool_weight
+    assert pytest.approx(weights[1]) == 0.25 * remaining
+    assert pytest.approx(weights[2]) == 0.75 * remaining
+    assert pytest.approx(sum(weights.values())) == 1.0
+
+
+def test_default_trader_pool_weight_is_disabled() -> None:
+    assert DEFAULT_SETTINGS.trader_rewards_pool_weight == 0.0
+
+
+def test_trader_pool_weight_forced_zero_ignores_env_and_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TRADER_REWARDS_POOL_WEIGHT", "0.243902")
+    settings = ValidatorSettings(trader_rewards_pool_weight=0.243902)
+    assert settings.trader_rewards_pool_weight == 0.0
+    revalidated = ValidatorSettings.model_validate(
+        {**DEFAULT_SETTINGS.model_dump(), "trader_rewards_pool_weight": 0.243902}
+    )
+    assert revalidated.trader_rewards_pool_weight == 0.0
+
+
+def test_trader_pool_weight_ignores_dotenv(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TRADER_REWARDS_POOL_WEIGHT", raising=False)
+    (tmp_path / ".env").write_text("TRADER_REWARDS_POOL_WEIGHT=0.243902\n")
+    load_env_file()
+    assert os.environ.get("TRADER_REWARDS_POOL_WEIGHT") == "0.243902"
+    assert ValidatorSettings().trader_rewards_pool_weight == 0.0
+
+
+def test_trader_pool_hotkey_from_env_reads_dotenv_after_load(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TRADER_REWARDS_POOL_HOTKEY", raising=False)
+    hotkey = "5CtestHotkeyOverrideForTraderPoolAllocation000000"
+    (tmp_path / ".env").write_text(f"TRADER_REWARDS_POOL_HOTKEY={hotkey}\n")
+    load_env_file()
+    assert trader_pool_hotkey_from_env() == hotkey
+
+
+def test_publish_hard_disables_trader_pool_despite_copied_settings() -> None:
+    subtensor = DummySubtensor(version_key=98765)
+    wallet = DummyWallet()
+    settings = DEFAULT_SETTINGS.model_copy(
+        update={"netuid": 99, "trader_rewards_pool_weight": 0.243902}
+    )
+    weights = publish(
+        {1: 10.0, 2: 30.0},
+        epoch_version="2024-10-18T00:00:00Z",
+        settings=settings,
+        subtensor=subtensor,
+        wallet=wallet,
+    )
+    assert pytest.approx(sum(weights.values())) == 1.0
+    assert pytest.approx(weights[1]) == 0.25
+    assert pytest.approx(weights[2]) == 0.75
+    assert 140 not in weights
 
 
 def test_publish_normalizes_and_calls_subtensor() -> None:

@@ -95,12 +95,12 @@ A principal miner below 100,000 USDC total across their entire vault receives `s
 ### Weight Normalization
 
 ```
-remaining_weight = 1.0 - trader_pool_weight     # = 0.756098 (75.6098%)
+remaining_weight = 1.0 - trader_pool_weight     # = 1.0; pool weight is forced to 0
 weight(miner_i)  = (score_i / Σ score_j) × remaining_weight
 
 Fixed allocations:
-  Incentive Pool:      24.3902% (always — airdrops, trader rewards, ecosystem incentives)
-  Subnet owner hotkey: 75.6098% (only when no miners qualify — emission burning)
+  Incentive Pool:      0% (forced — all miner emissions go to scored miners)
+  Subnet owner hotkey: 100% (only when no miners qualify — emission burning)
 ```
 
 ### Federated Miner Impact
